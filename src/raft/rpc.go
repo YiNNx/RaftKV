@@ -72,7 +72,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	if args.Term == rf.GetCurrentTerm() && rf.me == rf.leaderID {
+	if args.Term == rf.GetCurrentTerm() && rf.me == rf.GetLeaderID() {
 		panic("brain split!!")
 	}
 
