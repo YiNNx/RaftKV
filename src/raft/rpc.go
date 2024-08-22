@@ -1,115 +1,98 @@
 package raft
 
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-type RequestVoteArgs struct {
-	Term int64
-
-	CandidateID  int64
-	LastLogIndex int64
-	LastLogTerm  int64
+func (rf *Raft) checkReqTerm(term int) (bool, *int) {
+	rf.stateMu.RLock()
+	defer rf.stateMu.RUnlock()
+	if term < rf.currentTerm {
+		return false, &rf.currentTerm
+	}
+	return true, nil
 }
 
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-type RequestVoteReply struct {
-	Term int64
+func (rf *Raft) checkRespTerm(term int) bool {
+	rf.stateMu.Lock()
+	defer rf.stateMu.Unlock()
+	if term > rf.currentTerm {
+		rf.becomeFollower(term, -1)
+		return false
+	}
+	return true
+}
 
+type RequestVoteArgs struct {
+	Term         int
+	CandidateID  int
+	LastLogIndex int
+	LastLogTerm  int
+}
+
+type RequestVoteReply struct {
+	Term        int
 	VoteGranted bool
 }
 
-// example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-
-	// always refuse to handle the request if the term is expired
-	if args.Term < rf.GetCurrentTerm() {
-		reply.Term = rf.GetCurrentTerm()
-		reply.VoteGranted = false
+	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
 		rf.DPrintf("refuse vote for %d", args.CandidateID)
+		reply.Term = *curTerm
 		return
 	}
 
+	rf.stateMu.Lock()
+	defer rf.stateMu.Unlock()
+
 	// If RPC request or response contains term T > currentTerm:
 	// set currentTerm = T, convert to follower
-	if args.Term > rf.GetCurrentTerm() {
+	if args.Term > rf.currentTerm {
 		rf.becomeFollower(args.Term, -1)
 	}
 
 	// If votedFor is null or candidateId,
 	// and candidate's log is at least as up-to-date as receiver's log,
 	// grant vote
-	if rf.GetVoteFor() == -1 &&
-		((args.LastLogTerm == rf.GetLogList().lastLogTerm && args.LastLogIndex >= rf.GetLogList().lastLogIndex) ||
-			args.LastLogTerm > rf.GetLogList().lastLogTerm) {
+	if rf.voteFor == -1 &&
+		((args.LastLogTerm == rf.getLogList().lastLogTerm && args.LastLogIndex >= rf.getLogList().lastLogIndex) ||
+			args.LastLogTerm > rf.getLogList().lastLogTerm) {
 		rf.grantVote(args.CandidateID)
 		reply.VoteGranted = true
 		rf.DPrintf("vote for %d", args.CandidateID)
 	}
-	reply.Term = rf.GetCurrentTerm()
+	reply.Term = rf.currentTerm
 }
 
 type AppendEntriesArgs struct {
-	Term     int64
-	LeaderID int64
-
-	PrevLogIndex int64
-	PrevLogTerm  int64
+	Term         int
+	LeaderID     int
+	PrevLogIndex int
+	PrevLogTerm  int
 	Entries      []Entry
-	LeaderCommit int64
+	LeaderCommit int
 }
 
 type AppendEntriesReply struct {
-	Term int64
-
+	Term    int
 	Success bool
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	// always refuse to handle the request if the term is expired
-	if args.Term < rf.GetCurrentTerm() {
-		reply.Success = false
-		reply.Term = rf.GetCurrentTerm()
+	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
+		rf.DPrintf("refuse append entries for %d", args.LeaderID)
+		reply.Term = *curTerm
 		return
 	}
 
-	if args.Term == rf.GetCurrentTerm() && rf.me == rf.GetLeaderID() {
-		panic("brain split!!")
+	rf.stateMu.Lock()
+	defer rf.stateMu.Unlock()
+	if args.Term > rf.currentTerm {
+		rf.becomeFollower(args.Term, args.LeaderID)
 	}
 
-	rf.becomeFollower(args.Term, args.LeaderID)
 	rf.electionTimeout.Reset(getRandomElectionTimeout())
 
 	reply.Success = true
-	reply.Term = rf.GetCurrentTerm()
+	reply.Term = rf.currentTerm
 }
 
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok

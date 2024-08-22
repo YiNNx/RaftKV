@@ -22,14 +22,14 @@ type ApplyMsg struct {
 }
 
 type Entry struct {
-	Term    int64
+	Term    int
 	Command interface{}
 }
 
 type LogList struct {
 	logs         []Entry
-	lastLogIndex int64
-	lastLogTerm  int64
+	lastLogIndex int
+	lastLogTerm  int
 }
 
 func InitLogList() LogList {
@@ -45,4 +45,24 @@ func (l *LogList) IsEmpty() bool {
 }
 
 func (l *LogList) AppendLog(command interface{}, index int, term int) {
+}
+
+type RequestVoteReq struct {
+	args RequestVoteArgs
+	peer int
+}
+
+type RequestVoteRes struct {
+	reply RequestVoteReply
+	peer  int
+}
+
+type AppendEntriesReq struct {
+	args AppendEntriesArgs
+	peer int
+}
+
+type AppendEntriesRes struct {
+	reply AppendEntriesReply
+	peer  int
 }
