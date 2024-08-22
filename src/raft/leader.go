@@ -20,6 +20,7 @@ func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 	defer rf.stateMu.Unlock()
 
 	rf.SetLeaderID(rf.me)
+	rf.DPrintf("LEADER")
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
@@ -30,10 +31,10 @@ func (rf *Raft) broadcastEntries(ch chan AppendEntriesReq, _ interface{}) {
 	args := AppendEntriesArgs{
 		Term:         rf.currentTerm,
 		LeaderID:     rf.me,
-		prevLogIndex: rf.logs.lastLogIndex,
-		prevLogTerm:  rf.logs.lastLogTerm,
-		entries:      nil, // todo
-		leaderCommit: rf.commitIndex,
+		PrevLogIndex: rf.logs.lastLogIndex,
+		PrevLogTerm:  rf.logs.lastLogTerm,
+		Entries:      nil, // todo
+		LeaderCommit: rf.commitIndex,
 	}
 	for peer := range rf.peers {
 		if peer == int(rf.me) {
@@ -53,9 +54,10 @@ func (rf *Raft) appendEntriesWithRetry(ctx context.Context, req AppendEntriesReq
 	if ok {
 		respChan <- AppendEntriesRes{reply: reply, peer: req.peer}
 	}
+	ticker := time.NewTicker(getHeartbeatTime() / 3)
 	for {
 		select {
-		case <-time.After(50 * time.Millisecond):
+		case <-ticker.C: // todo
 			ok := rf.sendAppendEntries(req.peer, &req.args, &reply)
 			if ok {
 				respChan <- AppendEntriesRes{reply: reply, peer: req.peer}

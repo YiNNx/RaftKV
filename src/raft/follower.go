@@ -9,7 +9,9 @@ func (rf *Raft) becomeFollower(term int64, termLeader int64) (stateCtx context.C
 
 	rf.updateTermInfo(term, termLeader)
 
-	rf.stateCancel()
+	if rf.stateCancel != nil {
+		rf.stateCancel()
+	}
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
 	return stateCtx
 }
