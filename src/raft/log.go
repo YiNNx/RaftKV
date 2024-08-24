@@ -24,12 +24,20 @@ func (l *Entry) String() string {
 	return fmt.Sprintf("[%d(%d)]", l.Index, l.Term)
 }
 
+func (l *EntryList) String() string {
+	res := ""
+	for _, log := range l.Logs {
+		res += log.String()
+	}
+	return res
+}
+
 func (l *EntryList) getLastIndex() int {
-	return l.LastIndex
+	return l.Logs[len(l.Logs)-1].Index
 }
 
 func (l *EntryList) getLastTerm() int {
-	return l.LastTerm
+	return l.Logs[len(l.Logs)-1].Term
 }
 
 func (l *EntryList) getSlice(start int, end int) []Entry {
@@ -44,7 +52,7 @@ func (l *EntryList) getEntry(index int) *Entry {
 }
 
 func (l *EntryList) tryRemoveTail(start int) {
-	if start >= len(l.Logs) {
+	if start == 0 || start >= len(l.Logs) {
 		return
 	}
 	l.Logs = l.Logs[:start]

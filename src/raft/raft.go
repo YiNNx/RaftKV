@@ -172,7 +172,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = index
 	isLeader := true
 
-	rf.Debugf("START COMMAND %s", rf.logs.getEntry(index))
+	rf.HighLightf("START COMMAND %s", rf.logs.getEntry(index))
 	rf.appendTrigger <- AllPeers
 
 	return index, term, isLeader
@@ -188,6 +188,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // confusing debug output. any goroutine with a long-running loop
 // should call killed() to check whether it should stop.
 func (rf *Raft) Kill() {
+	rf.HighLightf("DEAD!")
 	atomic.StoreInt32(&rf.dead, 1)
 	close(rf.applyCh)
 	rf.stateCancel()
@@ -222,6 +223,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.ticker()
 	go rf.apply()
 
+	rf.HighLightf("START")
 	return rf
 }
 

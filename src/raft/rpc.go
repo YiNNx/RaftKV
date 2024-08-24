@@ -10,16 +10,6 @@ func (rf *Raft) checkReqTerm(term int) (bool, *int) {
 	return true, nil
 }
 
-func (rf *Raft) checkRespTerm(term int) bool {
-	rf.stateMu.Lock()
-	defer rf.stateMu.Unlock()
-	if term > rf.currentTerm {
-		rf.becomeFollower(term)
-		return false
-	}
-	return true
-}
-
 type RequestVoteArgs struct {
 	Term         int
 	CandidateID  int
@@ -106,23 +96,26 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if prevLog == nil || prevLog.Term != args.PrevLogTerm {
 		reply.Success = false
 		reply.Term = rf.currentTerm
-		rf.Debugf("prev log not match")
+		rf.Debugf("prev log %s not match leader's [%d(%d)]", prevLog, args.PrevLogIndex, args.PrevLogTerm)
 		return
 	}
-
-	rf.tryRemoveLogTail(args.PrevLogIndex + 1)
 
 	if len(args.Entries) != 0 {
 		leaderEndLog := args.Entries[len(args.Entries)-1]
 		endLog := rf.logs.getEntry(leaderEndLog.Index)
 		if endLog == nil || endLog.Term != leaderEndLog.Term {
+			rf.tryRemoveLogTail(args.PrevLogIndex + 1)
 			rf.appendLogList(args.Entries)
 		}
 		rf.Debugf("append logs: %d to %d", args.PrevLogIndex+1, leaderEndLog.Index)
 	}
 
 	if args.LeaderCommit > rf.commitIndex {
-		rf.commitIndex = min(args.LeaderCommit, rf.logs.getLastIndex())
+		old := rf.commitIndex
+		rf.commitIndex = min(args.LeaderCommit, args.PrevLogIndex+len(args.Entries))
+		if old != rf.commitIndex {
+			rf.Debugf("update commit index %d", rf.commitIndex)
+		}
 	}
 
 	reply.Success = true
