@@ -19,11 +19,21 @@ type Raft struct {
 	applyCh   chan ApplyMsg
 
 	// log state
-	logs        LogList
+	logMu *sync.RWMutex
+	logs  EntryList
+
 	commitIndex int
 	lastApplied int
 
-	nextIndex  []int
+	// for each server, index of the next log entry to send to that server
+	// (initialized to leader last log index + 1)
+	// update after
+	// 1. appendEntries failed, set start index - 1
+	// 2. appendEntries succeeded, set end index + 1
+	nextIndex []int
+	// for each server, index of highest log entry known to be replicated on server
+	// (initialized to 0, increases monotonically)
+	// update after appendEntries succeed, set as end log index
 	matchIndex []int
 
 	// node state
@@ -32,9 +42,11 @@ type Raft struct {
 	currentTerm int
 	voteFor     int
 
-	stateCancel context.CancelFunc
-
-	electionTimeout *time.Ticker
+	// flow control
+	appendTrigger  chan int
+	electionTicker *time.Ticker
+	applyTicker    *time.Ticker
+	stateCancel    context.CancelFunc
 }
 
 func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
@@ -52,12 +64,14 @@ func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 		leaderID:    -1,
 
 		logs:        InitLogList(),
+		logMu:       &sync.RWMutex{},
 		commitIndex: 0,
 		lastApplied: 0,
 		nextIndex:   nil,
 		matchIndex:  nil,
 
-		electionTimeout: time.NewTicker(getRandomElectionTimeout()),
+		electionTicker: time.NewTicker(getRandomElectionTimeout()),
+		applyTicker:    time.NewTicker(getHeartbeatTime()),
 	}
 	return rf
 }
@@ -65,10 +79,6 @@ func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 // >=
 func (rf *Raft) getPriorityNum() int {
 	return (len(rf.peers) + 1) / 2
-}
-
-func (rf *Raft) getLogList() LogList {
-	return rf.logs
 }
 
 // return currentTerm and whether this server
@@ -139,11 +149,21 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
+	rf.stateMu.RLock()
+	defer rf.stateMu.RUnlock()
+
+	if rf.killed() || rf.me != rf.leaderID {
+		return -1, -1, false
+	}
+
+	rf.logMu.Lock()
+	defer rf.logMu.Unlock()
+
+	term := rf.currentTerm
+	index := rf.logs.append(command, term)
 	isLeader := true
 
-	// Your code here (3B).
+	rf.appendTrigger <- AllPeers
 
 	return index, term, isLeader
 }
@@ -159,7 +179,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
-	// Your code here, if desired.
+	close(rf.applyCh)
+	rf.stateCancel()
+	rf.electionTicker.Stop()
+	rf.applyTicker.Stop()
 }
 
 func (rf *Raft) killed() bool {
@@ -189,4 +212,27 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.ticker()
 
 	return rf
+}
+
+func (rf *Raft) apply() {
+	for {
+		select {
+		case <-rf.applyTicker.C:
+			rf.logMu.Lock()
+			defer rf.logMu.Unlock()
+			for rf.lastApplied < rf.commitIndex {
+				rf.lastApplied++
+				entry := rf.logs.getEntry(rf.lastApplied)
+				rf.applyCh <- ApplyMsg{
+					CommandValid:  true,
+					Command:       entry.Command,
+					CommandIndex:  entry.Index,
+					SnapshotValid: false,
+					Snapshot:      []byte{},
+					SnapshotTerm:  0,
+					SnapshotIndex: 0,
+				}
+			}
+		}
+	}
 }

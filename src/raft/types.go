@@ -21,32 +21,6 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
-type Entry struct {
-	Term    int
-	Command interface{}
-}
-
-type LogList struct {
-	logs         []Entry
-	lastLogIndex int
-	lastLogTerm  int
-}
-
-func InitLogList() LogList {
-	return LogList{
-		logs:         make([]Entry, 1, 100),
-		lastLogIndex: 0,
-		lastLogTerm:  0,
-	}
-}
-
-func (l *LogList) IsEmpty() bool {
-	return l.lastLogIndex == 0
-}
-
-func (l *LogList) AppendLog(command interface{}, index int, term int) {
-}
-
 type RequestVoteReq struct {
 	args RequestVoteArgs
 	peer int
@@ -58,11 +32,15 @@ type RequestVoteRes struct {
 }
 
 type AppendEntriesReq struct {
-	args AppendEntriesArgs
-	peer int
+	args       AppendEntriesArgs
+	peer       int
+	startIndex int
+	endIndex   int
 }
 
 type AppendEntriesRes struct {
-	reply AppendEntriesReply
-	peer  int
+	reply      AppendEntriesReply
+	peer       int
+	startIndex int
+	endIndex   int
 }

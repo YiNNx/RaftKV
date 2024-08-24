@@ -47,12 +47,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.becomeFollower(args.Term, -1)
 	}
 
+	rf.logMu.RLock()
+	defer rf.logMu.RUnlock()
+
 	// If votedFor is null or candidateId,
 	// and candidate's log is at least as up-to-date as receiver's log,
 	// grant vote
 	if rf.voteFor == -1 &&
-		((args.LastLogTerm == rf.getLogList().lastLogTerm && args.LastLogIndex >= rf.getLogList().lastLogIndex) ||
-			args.LastLogTerm > rf.getLogList().lastLogTerm) {
+		((args.LastLogTerm == rf.logs.getLastTerm() && args.LastLogIndex >= rf.logs.getLastIndex()) ||
+			args.LastLogTerm > rf.logs.getLastTerm()) {
 		rf.grantVote(args.CandidateID)
 		reply.VoteGranted = true
 		rf.DPrintf("vote for %d", args.CandidateID)
@@ -76,7 +79,7 @@ type AppendEntriesReply struct {
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
-		rf.DPrintf("refuse append entries for %d", args.LeaderID)
+		rf.DPrintf("refuse append by %d", args.LeaderID)
 		reply.Term = *curTerm
 		return
 	}
@@ -87,8 +90,33 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.becomeFollower(args.Term, args.LeaderID)
 	}
 
-	rf.electionTimeout.Reset(getRandomElectionTimeout())
+	rf.logMu.Lock()
+	defer rf.logMu.Unlock()
 
+	prevLog := rf.logs.getEntry(args.PrevLogIndex)
+	if prevLog == nil || prevLog.Term != args.PrevLogTerm {
+		reply.Success = false
+		reply.Term = rf.currentTerm
+		rf.DPrintf("prev log not match")
+		return
+	}
+
+	if len(args.Entries) != 0 {
+		leaderEndLog := args.Entries[len(args.Entries)-1]
+		leaderStartLog := args.Entries[0]
+		endLog := rf.logs.getEntry(leaderEndLog.Index)
+		rf.DPrintf("append logs: %+v", args.Entries)
+		if endLog == nil || endLog.Term != leaderEndLog.Term {
+			rf.logs.removeTail(leaderStartLog.Index)
+			rf.logs.appendEntries(args.Entries)
+		}
+	}
+
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = min(args.LeaderCommit, rf.logs.getLastIndex())
+	}
+
+	rf.electionTicker.Reset(getRandomElectionTimeout())
 	reply.Success = true
 	reply.Term = rf.currentTerm
 }

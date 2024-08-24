@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// no need to set seed
 func getRandomElectionTimeout() time.Duration {
 	ms := 800 + (rand.Int63() % 2000)
 	return time.Duration(ms) * time.Millisecond
@@ -18,7 +17,8 @@ func getHeartbeatTime() time.Duration {
 
 func (rf *Raft) grantVote(candidate int) {
 	rf.voteFor = candidate
-	rf.electionTimeout.Reset(getRandomElectionTimeout())
+	rf.DPrintf("reset timer")
+	rf.electionTicker.Reset(getRandomElectionTimeout())
 }
 
 func (rf *Raft) updateTermInfo(term int, termLeader int) {
@@ -46,7 +46,7 @@ func (rf *Raft) ticker() {
 	for rf.killed() == false {
 		// Check if a leader election should be started.
 		select {
-		case <-rf.electionTimeout.C:
+		case <-rf.electionTicker.C:
 			rf.runCandidate()
 		}
 	}
@@ -69,12 +69,16 @@ func (rf *Raft) startElection() (candidateState context.Context, voteReqChan cha
 	candidateState = rf.becomeCandidate()
 	rf.stateMu.Unlock()
 
+	rf.logMu.RLock()
+	defer rf.logMu.RUnlock()
+
 	voteReqArgs := RequestVoteArgs{
 		Term:         rf.currentTerm,
 		CandidateID:  rf.me,
-		LastLogIndex: rf.getLogList().lastLogIndex,
-		LastLogTerm:  rf.getLogList().lastLogTerm,
+		LastLogIndex: rf.logs.getLastIndex(),
+		LastLogTerm:  rf.logs.getLastTerm(),
 	}
+
 	voteReqChan = make(chan RequestVoteReq, len(rf.peers)-1)
 	for peer := range rf.peers {
 		if peer == int(rf.me) {
@@ -106,7 +110,7 @@ func (rf *Raft) runCandidate() {
 		select {
 		case <-candidateState.Done():
 			return
-		case <-rf.electionTimeout.C:
+		case <-rf.electionTicker.C:
 			candidateState, voteReqChan = rf.startElection()
 			voteRespChan = make(chan RequestVoteRes, len(rf.peers)-1)
 			voteGrantedNum = 1
@@ -131,6 +135,14 @@ func (rf *Raft) runCandidate() {
 
 func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 	rf.leaderID = rf.me
+	rf.appendTrigger = make(chan int, 100)
+
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
+	for i := range rf.nextIndex {
+		rf.nextIndex[i] = rf.logs.getLastIndex() + 1
+	}
+
 	rf.DPrintf("LEADER")
 
 	rf.stateCancel()
@@ -138,70 +150,111 @@ func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 	return stateCtx
 }
 
-func (rf *Raft) broadcastEntries(ch chan AppendEntriesReq, _ interface{}) {
-	args := AppendEntriesArgs{
-		Term:         rf.currentTerm,
-		LeaderID:     rf.me,
-		PrevLogIndex: rf.logs.lastLogIndex,
-		PrevLogTerm:  rf.logs.lastLogTerm,
-		Entries:      nil, // todo
-		LeaderCommit: rf.commitIndex,
-	}
-	for peer := range rf.peers {
-		if peer == int(rf.me) {
-			continue
+const AllPeers = -1
+
+func (rf *Raft) getPeerIndexList(peer int) []int {
+	peers := []int{}
+	if peer == AllPeers {
+		for peer := range rf.peers {
+			if peer == int(rf.me) {
+				continue
+			}
+			peers = append(peers, peer)
 		}
-		ch <- AppendEntriesReq{args, peer}
+	} else {
+		peers = append(peers, peer)
+	}
+	return peers
+}
+
+func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, heartbeat bool) {
+	rf.logMu.RLock()
+	defer rf.logMu.RUnlock()
+
+	for _, peer := range rf.getPeerIndexList(peer) {
+		startIndex := rf.nextIndex[peer]
+		endIndex := rf.logs.getLastIndex()
+		prevLog := rf.logs.getEntry(startIndex - 1)
+
+		var entries []Entry
+		if !heartbeat && startIndex <= endIndex {
+			entries = rf.logs.getSlice(startIndex, endIndex)
+		}
+
+		args := AppendEntriesArgs{
+			Term:         rf.currentTerm,
+			LeaderID:     rf.me,
+			PrevLogIndex: prevLog.Index,
+			PrevLogTerm:  prevLog.Term,
+			Entries:      entries,
+			LeaderCommit: rf.commitIndex,
+		}
+
+		ch <- AppendEntriesReq{
+			args:       args,
+			peer:       peer,
+			startIndex: startIndex,
+			endIndex:   endIndex,
+		}
 	}
 }
 
-func (rf *Raft) broadcastHeartbeat(ch chan AppendEntriesReq) {
-	rf.broadcastEntries(ch, nil)
-}
-
-func (rf *Raft) appendEntriesWithRetry(ctx context.Context, req AppendEntriesReq, respChan chan AppendEntriesRes) {
+func (rf *Raft) sendEntries(req AppendEntriesReq, respChan chan AppendEntriesRes) {
 	reply := AppendEntriesReply{}
 	ok := rf.sendAppendEntries(req.peer, &req.args, &reply)
 	if ok {
-		respChan <- AppendEntriesRes{reply: reply, peer: req.peer}
-	}
-	ticker := time.NewTicker(getHeartbeatTime() / 3)
-	for {
-		select {
-		case <-ticker.C: // todo
-			ok := rf.sendAppendEntries(req.peer, &req.args, &reply)
-			if ok {
-				respChan <- AppendEntriesRes{reply: reply, peer: req.peer}
-			}
-		case <-ctx.Done():
-			return
+		respChan <- AppendEntriesRes{
+			reply:      reply,
+			peer:       req.peer,
+			startIndex: req.startIndex,
+			endIndex:   req.endIndex,
 		}
 	}
 }
 
 func (rf *Raft) runLeader() {
 	rf.stateMu.Lock()
+	rf.logMu.Lock()
 	leaderState := rf.becomeLeader()
+	rf.logMu.Unlock()
 	rf.stateMu.Unlock()
 
 	heartbeatTicker := time.NewTicker(getHeartbeatTime())
-	appendReqChan := make(chan AppendEntriesReq, 100)
-	appendRespChan := make(chan AppendEntriesRes, 100)
+	defer heartbeatTicker.Stop()
 
-	go rf.broadcastHeartbeat(appendReqChan)
+	reqChan := make(chan AppendEntriesReq, 100)
+	respChan := make(chan AppendEntriesRes, 100)
+
+	go rf.appendEntries(reqChan, AllPeers, true)
 
 	for rf.killed() == false {
 		select {
 		case <-leaderState.Done():
+			close(rf.appendTrigger)
 			return
 		case <-heartbeatTicker.C:
-			go rf.broadcastHeartbeat(appendReqChan)
-		case req := <-appendReqChan:
-			go rf.appendEntriesWithRetry(leaderState, req, appendRespChan)
-		case resp := <-appendRespChan:
+			go rf.appendEntries(reqChan, AllPeers, true)
+		case peer := <-rf.appendTrigger:
+			go rf.appendEntries(reqChan, peer, false)
+		case req := <-reqChan:
+			go rf.sendEntries(req, respChan)
+		case resp := <-respChan:
 			if ok := rf.checkRespTerm(resp.reply.Term); !ok {
+				close(rf.appendTrigger)
 				return
 			}
+			go func() {
+				rf.logMu.Lock()
+				defer rf.logMu.Unlock()
+
+				if resp.reply.Success {
+					rf.nextIndex[resp.peer] = max(rf.nextIndex[resp.peer], resp.endIndex+1)
+					rf.matchIndex[resp.peer] = max(rf.matchIndex[resp.peer], resp.endIndex)
+				} else {
+					rf.nextIndex[resp.peer] = resp.startIndex - 1
+					rf.appendTrigger <- resp.peer
+				}
+			}()
 		}
 	}
 }
