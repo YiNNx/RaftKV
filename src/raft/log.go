@@ -9,14 +9,14 @@ type Entry struct {
 }
 
 type EntryList struct {
-	logs      []Entry
-	lastIndex int
-	lastTerm  int
+	Logs      []Entry
+	LastIndex int
+	LastTerm  int
 }
 
-func InitLogList() EntryList {
+func NewLogList() EntryList {
 	return EntryList{
-		logs: make([]Entry, 1, 100),
+		Logs: make([]Entry, 1, 100),
 	}
 }
 
@@ -25,47 +25,47 @@ func (l *Entry) String() string {
 }
 
 func (l *EntryList) getLastIndex() int {
-	return l.lastIndex
+	return l.LastIndex
 }
 
 func (l *EntryList) getLastTerm() int {
-	return l.lastTerm
+	return l.LastTerm
 }
 
 func (l *EntryList) getSlice(start int, end int) []Entry {
-	return l.logs[start : end+1]
+	return l.Logs[start : end+1]
 }
 
 func (l *EntryList) getEntry(index int) *Entry {
-	if index < 0 || index >= len(l.logs) {
+	if index < 0 || index >= len(l.Logs) {
 		return nil
 	}
-	return &l.logs[index]
+	return &l.Logs[index]
 }
 
-func (l *EntryList) removeTail(start int) {
-	if start >= len(l.logs) {
+func (l *EntryList) tryRemoveTail(start int) {
+	if start >= len(l.Logs) {
 		return
 	}
-	l.logs = l.logs[:start]
-	l.lastIndex = start - 1
-	l.lastTerm = l.logs[start-1].Term
+	l.Logs = l.Logs[:start]
+	l.LastIndex = start - 1
+	l.LastTerm = l.Logs[start-1].Term
 }
 
 func (l *EntryList) append(command interface{}, term int) int {
-	l.lastIndex++
-	l.lastTerm = term
+	l.LastIndex++
+	l.LastTerm = term
 	newEntry := Entry{
-		Index:   l.lastIndex,
+		Index:   l.LastIndex,
 		Term:    term,
 		Command: command,
 	}
-	l.logs = append(l.logs, newEntry)
-	return l.lastIndex
+	l.Logs = append(l.Logs, newEntry)
+	return l.LastIndex
 }
 
 func (l *EntryList) appendEntries(entries []Entry) {
-	l.logs = append(l.logs, entries...)
-	l.lastIndex += len(entries)
-	l.lastTerm = l.logs[l.lastIndex].Term
+	l.Logs = append(l.Logs, entries...)
+	l.LastIndex += len(entries)
+	l.LastTerm = l.Logs[l.LastIndex].Term
 }
