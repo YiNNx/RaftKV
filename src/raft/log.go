@@ -1,5 +1,7 @@
 package raft
 
+import "fmt"
+
 type Entry struct {
 	Index   int
 	Term    int
@@ -16,6 +18,10 @@ func InitLogList() EntryList {
 	return EntryList{
 		logs: make([]Entry, 1, 100),
 	}
+}
+
+func (l *Entry) String() string {
+	return fmt.Sprintf("[%d(%d)]", l.Index, l.Term)
 }
 
 func (l *EntryList) getLastIndex() int {
@@ -38,6 +44,9 @@ func (l *EntryList) getEntry(index int) *Entry {
 }
 
 func (l *EntryList) removeTail(start int) {
+	if start >= len(l.logs) {
+		return
+	}
 	l.logs = l.logs[:start]
 	l.lastIndex = start - 1
 	l.lastTerm = l.logs[start-1].Term

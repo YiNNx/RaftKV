@@ -58,7 +58,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			args.LastLogTerm > rf.logs.getLastTerm()) {
 		rf.grantVote(args.CandidateID)
 		reply.VoteGranted = true
+	}
+	if reply.VoteGranted {
 		rf.DPrintf("vote for %d", args.CandidateID)
+	} else {
+		rf.DPrintf("refuse vote for %d", args.CandidateID)
 	}
 	reply.Term = rf.currentTerm
 }
@@ -105,25 +109,34 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	if len(args.Entries) != 0 {
-		leaderEndLog := args.Entries[len(args.Entries)-1]
-		leaderStartLog := args.Entries[0]
-		endLog := rf.logs.getEntry(leaderEndLog.Index)
-		rf.DPrintf("append logs: %d to %d", leaderStartLog.Index, leaderEndLog.Index)
-		if endLog == nil || endLog.Term != leaderEndLog.Term {
-			rf.logs.removeTail(leaderStartLog.Index)
-			rf.logs.appendEntries(args.Entries)
+	rf.electionTicker.Reset(getRandomElectionTimeout())
+	reply.Success = true
+	reply.Term = rf.currentTerm
+
+	if len(args.Entries) == 0 {
+		rf.logs.removeTail(args.PrevLogIndex + 1)
+		if args.LeaderCommit > rf.commitIndex {
+			rf.commitIndex = min(args.LeaderCommit, rf.logs.getLastIndex())
+			rf.DPrintf("update commit index: %d", rf.commitIndex)
 		}
+		return
+	}
+
+	leaderEndLog := args.Entries[len(args.Entries)-1]
+	leaderStartLog := args.Entries[0]
+	endLog := rf.logs.getEntry(leaderEndLog.Index)
+
+	rf.DPrintf("append logs: %d to %d", leaderStartLog.Index, leaderEndLog.Index)
+
+	if endLog == nil || endLog.Term != leaderEndLog.Term {
+		rf.logs.removeTail(leaderStartLog.Index)
+		rf.logs.appendEntries(args.Entries)
 	}
 
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, rf.logs.getLastIndex())
 		rf.DPrintf("update commit index: %d", rf.commitIndex)
 	}
-
-	rf.electionTicker.Reset(getRandomElectionTimeout())
-	reply.Success = true
-	reply.Term = rf.currentTerm
 }
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
