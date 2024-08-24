@@ -61,7 +61,7 @@ func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
 	rf.updateTerm(rf.currentTerm + 1)
 	rf.updateLeader(-1)
 	rf.grantVote(rf.me)
-	rf.DPrintf("CANDIDATE %s", rf.logs.getEntry(rf.logs.lastIndex))
+	rf.DPrintf("CANDIDATE")
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())

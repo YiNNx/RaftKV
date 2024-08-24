@@ -6,7 +6,7 @@ import (
 )
 
 // Debugging
-const Debug = true
+const Debug = false
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
@@ -25,7 +25,12 @@ var colors = []string{
 	"\033[38;5;69m",
 }
 
+// note: the debug printf will cause data race
+// but it's ok cause it's used for *debug* :)
 func (rf *Raft) DPrintf(format string, a ...interface{}) {
+	if !Debug {
+		return
+	}
 	colorPrefix := colors[rf.me] + fmt.Sprintf("[%d][term%d ld%d commit%d]", rf.me, rf.currentTerm, rf.leaderID, rf.commitIndex) + "\033[39;49m"
 	if rf.leaderID == rf.me {
 		colorPrefix = "\033[4m" + colorPrefix + "\033[0m"

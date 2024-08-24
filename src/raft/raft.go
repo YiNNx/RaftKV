@@ -229,20 +229,24 @@ func (rf *Raft) apply() {
 	for {
 		select {
 		case <-rf.applyTicker.C:
-			for rf.getLastApplied() < rf.commitIndex {
-				rf.incrLastApplied()
-				entry := rf.logs.getEntry(rf.getLastApplied())
-				rf.DPrintf("apply entry %s", entry)
-				rf.applyCh <- ApplyMsg{
-					CommandValid:  true,
-					Command:       entry.Command,
-					CommandIndex:  entry.Index,
-					SnapshotValid: false,
-					Snapshot:      []byte{},
-					SnapshotTerm:  0,
-					SnapshotIndex: 0,
+			go func() {
+				rf.logMu.RLock()
+				defer rf.logMu.RUnlock()
+				for rf.getLastApplied() < rf.commitIndex {
+					rf.incrLastApplied()
+					entry := rf.logs.getEntry(rf.getLastApplied())
+					rf.DPrintf("apply entry %s", entry)
+					rf.applyCh <- ApplyMsg{
+						CommandValid:  true,
+						Command:       entry.Command,
+						CommandIndex:  entry.Index,
+						SnapshotValid: false,
+						Snapshot:      []byte{},
+						SnapshotTerm:  0,
+						SnapshotIndex: 0,
+					}
 				}
-			}
+			}()
 		}
 	}
 }
