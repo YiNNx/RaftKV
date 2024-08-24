@@ -167,6 +167,7 @@ func (rf *Raft) runCandidate() {
 
 func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 	rf.leaderID = rf.me
+	close(rf.appendTrigger)
 	rf.appendTrigger = make(chan int, 100)
 
 	rf.nextIndex = make([]int, len(rf.peers))
@@ -251,10 +252,6 @@ func (rf *Raft) sendEntries(req AppendEntriesReq, respChan chan AppendEntriesRes
 	}
 }
 
-func (rf *Raft) exitLeader() {
-	close(rf.appendTrigger)
-}
-
 func (rf *Raft) runLeader() {
 	rf.stateMu.Lock()
 	rf.logMu.Lock()
@@ -264,7 +261,6 @@ func (rf *Raft) runLeader() {
 
 	heartbeatTicker := time.NewTicker(getHeartbeatTime())
 	defer heartbeatTicker.Stop()
-	defer rf.exitLeader()
 
 	reqChan := make(chan AppendEntriesReq, 100)
 	respChan := make(chan AppendEntriesRes, 100)
@@ -286,7 +282,6 @@ func (rf *Raft) runLeader() {
 				return
 			}
 			rf.logMu.Lock()
-
 			if resp.reply.Success {
 				if resp.endIndex >= resp.startIndex {
 					rf.Debugf("appendEntries ok - peer %d logs%s-%s", resp.peer, rf.logs.getEntry(resp.startIndex), rf.logs.getEntry(resp.endIndex))
