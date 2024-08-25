@@ -1,6 +1,8 @@
 package raft
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type Entry struct {
 	Index   int
@@ -10,13 +12,15 @@ type Entry struct {
 
 type EntryList struct {
 	Logs      []Entry
-	LastIndex int
-	LastTerm  int
+	PrevIndex int
+	PrevTerm  int
 }
 
 func NewLogList() EntryList {
 	return EntryList{
-		Logs: make([]Entry, 1, 100),
+		Logs:      make([]Entry, 1, 100),
+		PrevIndex: -1,
+		PrevTerm:  -1,
 	}
 }
 
@@ -32,48 +36,70 @@ func (l *EntryList) String() string {
 	return res
 }
 
+func (l *EntryList) getRawIndex(index int) int {
+	return index - (l.PrevIndex + 1)
+}
+
 func (l *EntryList) getLastIndex() int {
-	return l.Logs[len(l.Logs)-1].Index
+	if len(l.Logs) > 0 {
+		return l.Logs[len(l.Logs)-1].Index
+	}
+	return l.PrevIndex
 }
 
 func (l *EntryList) getLastTerm() int {
-	return l.Logs[len(l.Logs)-1].Term
+	if len(l.Logs) > 0 {
+		return l.Logs[len(l.Logs)-1].Term
+	}
+	return l.PrevTerm
 }
 
 func (l *EntryList) getSlice(start int, end int) []Entry {
-	return l.Logs[start : end+1]
+	return l.Logs[l.getRawIndex(start):l.getRawIndex(end+1)]
 }
 
 func (l *EntryList) getEntry(index int) *Entry {
-	if index < 0 || index >= len(l.Logs) {
+	if index == l.PrevIndex {
+		return &Entry{
+			Index: l.PrevIndex,
+			Term:  l.PrevTerm,
+		}
+	}
+	rawIndex := l.getRawIndex(index)
+	if rawIndex < 0 || rawIndex >= len(l.Logs) {
 		return nil
 	}
-	return &l.Logs[index]
+	return &l.Logs[rawIndex]
 }
 
-func (l *EntryList) tryRemoveTail(start int) {
-	if start == 0 || start >= len(l.Logs) {
+func (l *EntryList) tryCutPrefix(prefixEnd int) {
+	if l.getRawIndex(prefixEnd) < 0 {
 		return
 	}
-	l.Logs = l.Logs[:start]
-	l.LastIndex = start - 1
-	l.LastTerm = l.Logs[start-1].Term
+
+	prevLog := l.getEntry(prefixEnd)
+	l.Logs = l.Logs[l.getRawIndex(prefixEnd)+1:]
+	l.PrevIndex = prevLog.Index
+	l.PrevTerm = prevLog.Term
+}
+
+func (l *EntryList) tryCutSuffix(suffixStart int) {
+	if l.getRawIndex(suffixStart) < 0 || l.getRawIndex(suffixStart) >= len(l.Logs) {
+		return
+	}
+	l.Logs = l.Logs[:l.getRawIndex(suffixStart)]
 }
 
 func (l *EntryList) append(command interface{}, term int) int {
-	l.LastIndex++
-	l.LastTerm = term
 	newEntry := Entry{
-		Index:   l.LastIndex,
+		Index:   l.getLastIndex() + 1,
 		Term:    term,
 		Command: command,
 	}
 	l.Logs = append(l.Logs, newEntry)
-	return l.LastIndex
+	return newEntry.Index
 }
 
 func (l *EntryList) appendEntries(entries []Entry) {
 	l.Logs = append(l.Logs, entries...)
-	l.LastIndex += len(entries)
-	l.LastTerm = l.Logs[l.LastIndex].Term
 }

@@ -39,6 +39,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	rf.logMu.RLock()
+
 	defer rf.logMu.RUnlock()
 
 	// If votedFor is null or candidateId,
@@ -90,6 +91,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	rf.logMu.Lock()
+
 	defer rf.logMu.Unlock()
 
 	prevLog := rf.logs.getEntry(args.PrevLogIndex)
@@ -124,6 +126,41 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 }
 
+type InstallSnapshotArgs struct {
+	Term              int
+	LeaderID          int
+	LastIncludedIndex int
+	LastIncludedTerm  int
+	Snapshot          []byte
+}
+
+type InstallSnapshotReply struct {
+	Term int
+}
+
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
+		rf.Debugf("refuse append by %d", args.LeaderID)
+		reply.Term = *curTerm
+		return
+	}
+
+	rf.stateMu.Lock()
+	defer rf.stateMu.Unlock()
+
+	if args.Term > rf.currentTerm {
+		rf.becomeFollower(args.Term)
+	}
+	if args.LeaderID != rf.leaderID {
+		rf.updateLeader(args.LeaderID)
+	}
+
+	rf.logMu.Lock()
+
+	defer rf.logMu.Unlock()
+
+}
+
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
@@ -131,5 +168,10 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
+}
+
+func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
+	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
 	return ok
 }

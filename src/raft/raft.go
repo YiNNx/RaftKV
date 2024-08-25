@@ -21,8 +21,9 @@ type Raft struct {
 	applyCh   chan ApplyMsg
 
 	// log state
-	logMu *sync.RWMutex
-	logs  EntryList
+	logMu    *sync.RWMutex
+	logs     EntryList
+	snapshot []byte
 
 	commitIndex int
 	lastApplied int64
@@ -113,6 +114,7 @@ func (rf *Raft) persist() {
 	e.Encode(rf.currentTerm)
 	e.Encode(rf.voteFor)
 	e.Encode(rf.logs)
+	e.Encode(rf.snapshot)
 	raftstate := w.Bytes()
 	rf.persister.Save(raftstate, nil)
 }
@@ -127,12 +129,14 @@ func (rf *Raft) readPersist(data []byte) {
 	var currentTerm int
 	var voteFor int
 	var logs EntryList
-	if d.Decode(&currentTerm) != nil || d.Decode(&voteFor) != nil || d.Decode(&logs) != nil {
+	var snapshot []byte
+	if d.Decode(&currentTerm) != nil || d.Decode(&voteFor) != nil || d.Decode(&logs) != nil || d.Decode(&snapshot) != nil {
 		panic("failed to decode")
 	} else {
 		rf.currentTerm = currentTerm
 		rf.voteFor = voteFor
 		rf.logs = logs
+		rf.snapshot = snapshot
 	}
 }
 
@@ -141,8 +145,18 @@ func (rf *Raft) readPersist(data []byte) {
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (3D).
+	rf.HighLightf("try acquire lock!")
 
+	rf.logMu.Lock()
+
+	defer rf.logMu.Unlock()
+
+	rf.HighLightf("acquired!")
+
+	rf.Debugf("now snapshot til index %d", index)
+	rf.snapshot = snapshot
+	rf.logs.tryCutPrefix(index)
+	rf.Debugf("logs: %s", &rf.logs)
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -166,6 +180,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 
 	rf.logMu.Lock()
+
 	defer rf.logMu.Unlock()
 
 	term := rf.currentTerm
@@ -218,6 +233,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
+
+	if rf.snapshot != nil {
+		go func() {
+			rf.applyCh <- ApplyMsg{
+				SnapshotValid: true,
+				Snapshot:      rf.snapshot,
+				SnapshotTerm:  rf.logs.PrevTerm,
+				SnapshotIndex: rf.logs.PrevIndex,
+			}
+		}()
+	}
 
 	rf.becomeFollower(rf.currentTerm)
 

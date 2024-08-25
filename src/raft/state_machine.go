@@ -29,8 +29,13 @@ func (rf *Raft) updateTerm(term int) {
 	}
 }
 
+func (rf *Raft) setSnapshot(snapshot []byte) {
+	rf.persist()
+	rf.snapshot = snapshot
+}
+
 func (rf *Raft) tryRemoveLogTail(start int) {
-	rf.logs.tryRemoveTail(start)
+	rf.logs.tryCutSuffix(start)
 	rf.persist()
 }
 
@@ -102,6 +107,7 @@ func (rf *Raft) startElection() (candidateState context.Context, voteReqChan cha
 	rf.stateMu.Unlock()
 
 	rf.logMu.RLock()
+
 	defer rf.logMu.RUnlock()
 
 	voteReqArgs := RequestVoteArgs{
@@ -206,6 +212,7 @@ func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, heartbeat bool
 	defer rf.stateMu.RUnlock()
 
 	rf.logMu.RLock()
+
 	defer rf.logMu.RUnlock()
 
 	for _, peer := range rf.getPeerIndexList(peer) {
@@ -255,6 +262,7 @@ func (rf *Raft) sendEntries(req AppendEntriesReq, respChan chan AppendEntriesRes
 func (rf *Raft) runLeader() {
 	rf.stateMu.Lock()
 	rf.logMu.Lock()
+
 	leaderState := rf.becomeLeader()
 	rf.logMu.Unlock()
 	rf.stateMu.Unlock()
@@ -282,6 +290,7 @@ func (rf *Raft) runLeader() {
 				return
 			}
 			rf.logMu.Lock()
+
 			if resp.reply.Success {
 				if resp.endIndex >= resp.startIndex {
 					rf.Debugf("appendEntries ok - peer %d logs%s-%s", resp.peer, rf.logs.getEntry(resp.startIndex), rf.logs.getEntry(resp.endIndex))
