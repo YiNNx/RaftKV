@@ -79,11 +79,11 @@ func (l *EntryList) getEntry(index int) *Entry {
 
 func (l *EntryList) tryCutPrefix(prefixEnd int) {
 	rawEnd := l.getRawIndex(prefixEnd)
-	if rawEnd < 0 {
-		return
-	}
 	if rawEnd > len(l.Logs)-1 {
 		rawEnd = len(l.Logs) - 1
+	}
+	if rawEnd < 0 {
+		return
 	}
 	prevLog := l.Logs[rawEnd]
 	l.Logs = l.Logs[rawEnd+1:]
