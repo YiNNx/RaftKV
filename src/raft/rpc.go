@@ -31,16 +31,14 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.stateMu.Lock()
 	defer rf.stateMu.Unlock()
+	rf.logMu.RLock()
+	defer rf.logMu.RUnlock()
 
 	// If RPC request or response contains term T > currentTerm:
 	// set currentTerm = T, convert to follower
 	if args.Term > rf.currentTerm {
 		rf.becomeFollower(args.Term)
 	}
-
-	rf.logMu.RLock()
-
-	defer rf.logMu.RUnlock()
 
 	// If votedFor is null or candidateId,
 	// and candidate's log is at least as up-to-date as receiver's log,
@@ -82,6 +80,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.stateMu.Lock()
 	defer rf.stateMu.Unlock()
+	rf.logMu.Lock()
+	defer rf.logMu.Unlock()
 
 	if args.Term > rf.currentTerm {
 		rf.becomeFollower(args.Term)
@@ -89,10 +89,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.LeaderID != rf.leaderID {
 		rf.updateLeader(args.LeaderID)
 	}
-
-	rf.logMu.Lock()
-
-	defer rf.logMu.Unlock()
 
 	prevLog := rf.logs.getEntry(args.PrevLogIndex)
 	if prevLog == nil || prevLog.Term != args.PrevLogTerm {
@@ -123,7 +119,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Success = true
 	reply.Term = rf.currentTerm
 	rf.electionTicker.Reset(getRandomElectionTimeout())
-
 }
 
 type InstallSnapshotArgs struct {
@@ -147,6 +142,8 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 
 	rf.stateMu.Lock()
 	defer rf.stateMu.Unlock()
+	rf.logMu.Lock()
+	defer rf.logMu.Unlock()
 
 	if args.Term > rf.currentTerm {
 		rf.becomeFollower(args.Term)
@@ -155,9 +152,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		rf.updateLeader(args.LeaderID)
 	}
 	reply.Term = rf.currentTerm
-
-	rf.logMu.Lock()
-	defer rf.logMu.Unlock()
 
 	if rf.getLastApplied() > args.LastIncludedIndex {
 		return

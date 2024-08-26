@@ -4,7 +4,12 @@ import "context"
 
 // ----- CANDIDATE -----
 
-func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
+func (rf *Raft) becomeCandidate() (term int, stateCtx context.Context) {
+	rf.stateMu.Lock()
+	defer rf.stateMu.Unlock()
+	rf.logMu.RLock()
+	defer rf.logMu.RUnlock()
+
 	rf.updateTerm(rf.currentTerm + 1)
 	rf.updateLeader(-1)
 	rf.grantVote(rf.me)
@@ -12,20 +17,17 @@ func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
-	return stateCtx
+	return rf.currentTerm, stateCtx
 }
 
 func (rf *Raft) startElection() (candidateState context.Context, voteReqChan chan VoteReq) {
-	rf.stateMu.Lock()
-	candidateState = rf.becomeCandidate()
-	rf.stateMu.Unlock()
+	curTerm, candidateState := rf.becomeCandidate()
 
 	rf.logMu.RLock()
-
 	defer rf.logMu.RUnlock()
 
 	voteReqArgs := RequestVoteArgs{
-		Term:         rf.currentTerm,
+		Term:         curTerm,
 		CandidateID:  rf.me,
 		LastLogIndex: rf.logs.getLastIndex(),
 		LastLogTerm:  rf.logs.getLastTerm(),
