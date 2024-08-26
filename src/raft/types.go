@@ -44,3 +44,14 @@ type AppendEntriesRes struct {
 	startIndex int
 	endIndex   int
 }
+
+type InstallSnapshotReq struct {
+	args InstallSnapshotArgs
+	peer int
+}
+
+type InstallSnapshotRes struct {
+	reply     InstallSnapshotReply
+	peer      int
+	lastIndex int
+}
