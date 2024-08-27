@@ -22,21 +22,21 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 
 func (ck *Clerk) TryCall(svcMeth string, args interface{}) interface{} {
 	i := atomic.LoadUint64(&ck.cacheLeader)
-	DPrintf("call: %s %+v", svcMeth, args)
 	opID := uuid.New().String()
 	for {
 		var res Response
 		i = i % uint64(len(ck.servers))
+		DPrintf("[client] try call %d %s [%s]", i, svcMeth, opID)
 		if ck.servers[i].Call(svcMeth, &Request{
 			OpID: opID,
 			Args: args,
 		}, &res) {
+			DPrintf("[client] call %d finish [%s], err %s", i, opID[:4], res.Err)
 			err := res.Err
 			if err == OK {
 				atomic.StoreUint64(&ck.cacheLeader, i)
 				return res.Reply
 			}
-			DPrintf("call failed: %s", err)
 		}
 		i++
 	}
@@ -55,7 +55,6 @@ func (ck *Clerk) TryCall(svcMeth string, args interface{}) interface{} {
 func (ck *Clerk) Get(key string) string {
 	args := GetArgs{Key: key}
 	reply := ck.TryCall("KVServer.Get", &args)
-	DPrintf("ok: Get %+v - %+v", args, reply)
 	return reply.(GetReply).Value
 }
 
@@ -73,7 +72,6 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		Value: value,
 	}
 	ck.TryCall("KVServer."+op, &args)
-	DPrintf("ok: %s %+v - %+v", op, args, nil)
 }
 
 func (ck *Clerk) Put(key string, value string) {

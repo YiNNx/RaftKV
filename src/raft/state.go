@@ -109,6 +109,7 @@ func (rf *Raft) apply() {
 
 				go func() {
 					for _, msg := range msgList {
+						// rf.Debugf("apply entry %d", msg.CommandIndex)
 						rf.applyCh <- msg
 					}
 				}()
