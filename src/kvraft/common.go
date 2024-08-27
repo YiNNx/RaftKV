@@ -1,32 +1,44 @@
 package kvraft
 
 const (
-	OK             = "OK"
-	ErrNoKey       = "ErrNoKey"
-	ErrWrongLeader = "ErrWrongLeader"
+	OK                = "OK"
+	ErrNoKey          = "ErrNoKey"
+	ErrWrongLeader    = "ErrWrongLeader"
+	ErrSessionExpired = "session expired"
 )
 
 type Err string
 
-// Put or Append
+type Request struct {
+	OpID string
+	Args interface{}
+}
+
+type Response struct {
+	Err   Err
+	Reply interface{}
+}
+
 type PutAppendArgs struct {
 	Key   string
 	Value string
-	// You'll have to add definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
 }
 
 type PutAppendReply struct {
-	Err Err
 }
 
 type GetArgs struct {
 	Key string
-	// You'll have to add definitions here.
 }
 
 type GetReply struct {
-	Err   Err
 	Value string
+}
+
+type FinishArgs struct {
+	OpID string
+}
+
+type FinishReply struct {
+	Err Err
 }
