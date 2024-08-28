@@ -96,7 +96,7 @@ func (rf *Raft) apply() {
 					return
 				}
 				msgList := make([]ApplyMsg, rf.commitIndex-lastApplied)
-				rf.Debugf("apply entry %d - %d", lastApplied+1, rf.commitIndex)
+				// rf.Debugf("apply entry %d - %d", lastApplied+1, rf.commitIndex)
 				for i := range msgList {
 					entry := rf.logs.getEntry(rf.getLastApplied() + i + 1)
 					msgList[i] = ApplyMsg{
@@ -109,7 +109,7 @@ func (rf *Raft) apply() {
 
 				go func() {
 					for _, msg := range msgList {
-						// rf.Debugf("apply entry %d", msg.CommandIndex)
+						rf.Debugf("apply entry %d", msg.CommandIndex)
 						rf.applyCh <- msg
 					}
 				}()
