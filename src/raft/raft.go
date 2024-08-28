@@ -17,6 +17,7 @@ type Raft struct {
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 	applyCh   chan ApplyMsg
+	applyChMu *sync.Mutex
 
 	// log state
 	logMu    *sync.RWMutex
@@ -58,6 +59,7 @@ func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 		me:        int(me),
 		dead:      0,
 		applyCh:   applyCh,
+		applyChMu: &sync.Mutex{},
 
 		stateMu:     &sync.RWMutex{},
 		currentTerm: 0,
