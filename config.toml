@@ -1,0 +1,6 @@
+[rpc]
+cluster = [":8080", ":8081", ":8082", ":8083", ":8084"]
+
+[persister]
+state_path = "/tmp/kvraft/state"
+snapshot_path = "/tmp/kvraft/snapshot"
