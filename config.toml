@@ -1,6 +1,21 @@
-[rpc]
-cluster = [":8080", ":8081", ":8082", ":8083", ":8084"]
+[cluster]
+
+[[cluster.nodes]]
+id = 0
+host = "127.0.0.1"
+port = ":8080"
+
+[[cluster.nodes]]
+id = 1
+host = "127.0.0.1"
+port = ":8081"
+
+[[cluster.nodes]]
+id = 2
+host = "127.0.0.1"
+port = ":8082"
+
 
 [persister]
-state_path = "/tmp/kvraft/state"
-snapshot_path = "/tmp/kvraft/snapshot"
+state = "/tmp/kvraft/state"
+snapshot = "/tmp/kvraft/snapshot"

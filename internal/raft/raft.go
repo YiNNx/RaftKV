@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"encoding/gob"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,13 +12,13 @@ import (
 )
 
 type Raft struct {
-	// for lab config
-	peers     []*rpc.ClientEnd     // RPC end points of all peers
-	persister *persister.Persister // Object to hold this peer's persisted state
-	me        int                  // this peer's index into peers[]
-	dead      int32                // set by Kill()
-	applyCh   chan ApplyMsg
+	peers     map[int]*rpc.ClientEnd // RPC end points of all peers
+	persister *persister.Persister   // Object to hold this peer's persisted state
+	me        int                    // this peer's index into peers[]
+	dead      int32                  // set by Kill()
+
 	applyChMu *sync.Mutex
+	applyCh   chan ApplyMsg
 
 	// log state
 	logMu    *sync.RWMutex
@@ -51,7 +52,7 @@ type Raft struct {
 	stateCancel    context.CancelFunc
 }
 
-func NewRaftInstance(peers []*rpc.ClientEnd, me int,
+func NewRaftInstance(peers map[int]*rpc.ClientEnd, me int,
 	persister *persister.Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{
 		peers:     peers,
@@ -89,7 +90,7 @@ func NewRaftInstance(peers []*rpc.ClientEnd, me int,
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-func Make(peers []*rpc.ClientEnd, me int,
+func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int,
 	persister *persister.Persister, applyCh chan ApplyMsg) *Raft {
 	rf := NewRaftInstance(peers, me, persister, applyCh)
 	// initialize from state persisted before a crash
@@ -112,8 +113,44 @@ func Make(peers []*rpc.ClientEnd, me int,
 	go rf.ticker()
 	go rf.apply()
 
+	rpcServer.Register(rf)
 	rf.HighLightf("START")
 	return rf
+}
+
+func (rf *Raft) apply() {
+	for {
+		select {
+		case <-rf.applyTicker.C:
+			func() {
+				rf.logMu.RLock()
+				defer rf.logMu.RUnlock()
+				lastApplied := rf.getLastApplied()
+				if rf.commitIndex == lastApplied {
+					return
+				}
+				msgList := make([]ApplyMsg, rf.commitIndex-lastApplied)
+				rf.HighLightf("apply entry %d - %d", lastApplied+1, rf.commitIndex)
+				for i := range msgList {
+					entry := rf.logs.getEntry(rf.getLastApplied() + i + 1)
+					msgList[i] = ApplyMsg{
+						CommandValid: true,
+						Command:      entry.Command,
+						CommandIndex: entry.Index,
+					}
+				}
+				rf.setLastApplied(rf.commitIndex)
+
+				go func() {
+					rf.applyChMu.Lock()
+					defer rf.applyChMu.Unlock()
+					for _, msg := range msgList {
+						rf.applyCh <- msg
+					}
+				}()
+			}()
+		}
+	}
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -129,6 +166,13 @@ func Make(peers []*rpc.ClientEnd, me int,
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	gob.Register(&RequestVoteArgs{})
+	gob.Register(&RequestVoteReply{})
+	gob.Register(&AppendEntriesArgs{})
+	gob.Register(&AppendEntriesReply{})
+	gob.Register(&InstallSnapshotArgs{})
+	gob.Register(&InstallSnapshotReply{})
+
 	rf.stateMu.Lock()
 	defer rf.stateMu.Unlock()
 
@@ -144,7 +188,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = index
 	isLeader := true
 
-	rf.HighLightf("START COMMAND %s %+v", rf.logs.getEntry(index), command)
+	rf.HighLightf("START COMMAND %s", rf.logs.getEntry(index))
 	rf.appendTrigger <- AllPeers
 
 	return index, term, isLeader

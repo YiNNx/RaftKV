@@ -1,9 +1,21 @@
 package common
 
 type Config struct {
-	RPC RPC
+	Cluster   Cluster
+	Persister Persister
 }
 
-type RPC struct {
-	Cluster []string
+type Cluster struct {
+	Nodes []Node
+}
+
+type Node struct {
+	ID   int
+	Host string
+	Port string
+}
+
+type Persister struct {
+	State    string
+	Snapshot string
 }

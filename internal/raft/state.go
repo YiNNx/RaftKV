@@ -2,11 +2,10 @@ package raft
 
 import (
 	"bytes"
+	"encoding/gob"
 	"math/rand"
 	"sync/atomic"
 	"time"
-
-	"raftkv/pkg/gob"
 )
 
 func getRandomElectionTimeout() time.Duration {
@@ -77,45 +76,14 @@ func (rf *Raft) getPriorityNum() int {
 
 // return currentTerm and whether this server
 // believes it is the leader.
-func (rf *Raft) GetState() (int, bool) {
+func (rf *Raft) GetState() (currentTerm int, lastLogTerm int, isLeader bool) {
 	rf.stateMu.RLock()
 	defer rf.stateMu.RUnlock()
-	return int(rf.currentTerm), rf.leaderID == rf.me
-}
 
-func (rf *Raft) apply() {
-	for {
-		select {
-		case <-rf.applyTicker.C:
-			func() {
-				rf.logMu.RLock()
-				defer rf.logMu.RUnlock()
-				lastApplied := rf.getLastApplied()
-				if rf.commitIndex == lastApplied {
-					return
-				}
-				msgList := make([]ApplyMsg, rf.commitIndex-lastApplied)
-				// rf.Debugf("apply entry %d - %d", lastApplied+1, rf.commitIndex)
-				for i := range msgList {
-					entry := rf.logs.getEntry(rf.getLastApplied() + i + 1)
-					msgList[i] = ApplyMsg{
-						CommandValid: true,
-						Command:      entry.Command,
-						CommandIndex: entry.Index,
-					}
-				}
-				rf.setLastApplied(rf.commitIndex)
+	rf.logMu.RLock()
+	defer rf.logMu.RUnlock()
 
-				go func() {
-					rf.applyChMu.Lock()
-					defer rf.applyChMu.Unlock()
-					for _, msg := range msgList {
-						rf.applyCh <- msg
-					}
-				}()
-			}()
-		}
-	}
+	return int(rf.currentTerm), rf.logs.getLastTerm(), rf.leaderID == rf.me
 }
 
 // save Raft's persistent state to stable storage,
