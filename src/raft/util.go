@@ -39,6 +39,11 @@ func (rf *Raft) Debugf(format string, a ...interface{}) {
 	DPrintf(format, a...)
 }
 
+func (rf *Raft) HighLightf(format string, a ...interface{}) {
+	format = colors[rf.me] + format + "\033[39;49m"
+	rf.Debugf(format, a...)
+}
+
 func init() {
 	log.SetFlags(log.Lmicroseconds)
 }

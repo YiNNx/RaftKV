@@ -49,6 +49,16 @@ func (rf *Raft) updateLeader(leaderID int) {
 	rf.leaderID = leaderID
 }
 
+func (rf *Raft) checkRespTerm(term int) bool {
+	rf.stateMu.Lock()
+	defer rf.stateMu.Unlock()
+	if term > rf.currentTerm {
+		rf.becomeFollower(term)
+		return false
+	}
+	return true
+}
+
 // ----- FOLLOWER -----
 
 // turn into a follower with leader unawareness
@@ -79,7 +89,7 @@ func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
 	rf.updateTerm(rf.currentTerm + 1)
 	rf.updateLeader(-1)
 	rf.grantVote(rf.me)
-	rf.Debugf("CANDIDATE")
+	rf.HighLightf("CANDIDATE")
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
@@ -165,7 +175,7 @@ func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 		rf.nextIndex[i] = rf.logs.getLastIndex() + 1
 	}
 
-	rf.Debugf("LEADER")
+	rf.HighLightf("LEADER")
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
@@ -199,11 +209,12 @@ func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, heartbeat bool
 
 	for _, peer := range rf.getPeerIndexList(peer) {
 		startIndex := rf.nextIndex[peer]
+		startLog := rf.logs.getEntry(startIndex)
 		endIndex := rf.logs.getLastIndex()
 		prevLog := rf.logs.getEntry(startIndex - 1)
 
 		var entries []Entry
-		if !heartbeat && startIndex <= endIndex {
+		if (!heartbeat || (startLog != nil && startLog.Term == currentTerm)) && startIndex <= endIndex {
 			entries = rf.logs.getSlice(startIndex, endIndex)
 		} else {
 			endIndex = startIndex - 1
@@ -240,6 +251,10 @@ func (rf *Raft) sendEntries(req AppendEntriesReq, respChan chan AppendEntriesRes
 	}
 }
 
+func (rf *Raft) exitLeader() {
+	close(rf.appendTrigger)
+}
+
 func (rf *Raft) runLeader() {
 	rf.stateMu.Lock()
 	rf.logMu.Lock()
@@ -249,6 +264,7 @@ func (rf *Raft) runLeader() {
 
 	heartbeatTicker := time.NewTicker(getHeartbeatTime())
 	defer heartbeatTicker.Stop()
+	defer rf.exitLeader()
 
 	reqChan := make(chan AppendEntriesReq, 100)
 	respChan := make(chan AppendEntriesRes, 100)
@@ -258,7 +274,6 @@ func (rf *Raft) runLeader() {
 	for rf.killed() == false {
 		select {
 		case <-leaderState.Done():
-			close(rf.appendTrigger)
 			return
 		case <-heartbeatTicker.C:
 			go rf.appendEntries(reqChan, AllPeers, true)
@@ -268,28 +283,22 @@ func (rf *Raft) runLeader() {
 			go rf.sendEntries(req, respChan)
 		case resp := <-respChan:
 			if ok := rf.checkRespTerm(resp.reply.Term); !ok {
-				close(rf.appendTrigger)
 				return
 			}
-			go func() {
-				rf.stateMu.RLock()
-				defer rf.stateMu.RUnlock()
+			rf.logMu.Lock()
 
-				rf.logMu.Lock()
-				defer rf.logMu.Unlock()
-
-				if resp.reply.Success {
-					if resp.endIndex >= resp.startIndex {
-						rf.Debugf("appendEntries ok - peer %d logs%s-%s", resp.peer, rf.logs.getEntry(resp.startIndex), rf.logs.getEntry(resp.endIndex))
-					}
-					rf.nextIndex[resp.peer] = max(rf.nextIndex[resp.peer], resp.endIndex+1)
-					rf.matchIndex[resp.peer] = max(rf.matchIndex[resp.peer], resp.endIndex)
-					rf.commitIndex = rf.calculateCommitIndex(resp.endIndex)
-				} else {
-					rf.nextIndex[resp.peer] = resp.startIndex - 1
-					rf.appendTrigger <- resp.peer
+			if resp.reply.Success {
+				if resp.endIndex >= resp.startIndex {
+					rf.Debugf("appendEntries ok - peer %d logs%s-%s", resp.peer, rf.logs.getEntry(resp.startIndex), rf.logs.getEntry(resp.endIndex))
 				}
-			}()
+				rf.nextIndex[resp.peer] = max(rf.nextIndex[resp.peer], resp.endIndex+1)
+				rf.matchIndex[resp.peer] = max(rf.matchIndex[resp.peer], resp.endIndex)
+				rf.commitIndex = rf.calculateCommitIndex(resp.endIndex)
+			} else {
+				rf.nextIndex[resp.peer] = resp.startIndex / 2 // ?
+				rf.appendTrigger <- resp.peer
+			}
+			rf.logMu.Unlock()
 		}
 	}
 }
