@@ -17,23 +17,25 @@ func getHeartbeatTime() time.Duration {
 
 func (rf *Raft) grantVote(candidate int) {
 	rf.voteFor = candidate
-	rf.DPrintf("reset timer")
 	rf.electionTicker.Reset(getRandomElectionTimeout())
 }
 
-func (rf *Raft) updateTermInfo(term int, termLeader int) {
+func (rf *Raft) updateTerm(term int) {
 	if term != rf.currentTerm {
 		rf.currentTerm = term
 		rf.voteFor = -1
 	}
-	rf.leaderID = termLeader
+}
+
+func (rf *Raft) updateLeader(leaderID int) {
+	rf.leaderID = leaderID
 }
 
 // ----- FOLLOWER -----
 
 // turn into a follower with leader unawareness
-func (rf *Raft) becomeFollower(term int, termLeader int) (stateCtx context.Context) {
-	rf.updateTermInfo(term, termLeader)
+func (rf *Raft) becomeFollower(term int) (stateCtx context.Context) {
+	rf.updateTerm(term)
 
 	if rf.stateCancel != nil {
 		rf.stateCancel()
@@ -55,7 +57,7 @@ func (rf *Raft) ticker() {
 // ----- CANDIDATE -----
 
 func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
-	rf.updateTermInfo(rf.currentTerm+1, -1)
+	rf.updateTerm(rf.currentTerm + 1)
 	rf.grantVote(rf.me)
 	rf.DPrintf("CANDIDATE")
 
@@ -244,12 +246,19 @@ func (rf *Raft) runLeader() {
 				return
 			}
 			go func() {
+				rf.stateMu.RLock()
+				defer rf.stateMu.RUnlock()
+
 				rf.logMu.Lock()
 				defer rf.logMu.Unlock()
 
 				if resp.reply.Success {
 					rf.nextIndex[resp.peer] = max(rf.nextIndex[resp.peer], resp.endIndex+1)
 					rf.matchIndex[resp.peer] = max(rf.matchIndex[resp.peer], resp.endIndex)
+					rf.commitIndex = rf.calculateCommitIndex(resp.endIndex)
+					if resp.endIndex >= resp.startIndex {
+						rf.DPrintf("append succeed: %+v commit index: %+v", resp, rf.commitIndex)
+					}
 				} else {
 					rf.nextIndex[resp.peer] = resp.startIndex - 1
 					rf.appendTrigger <- resp.peer
@@ -257,4 +266,21 @@ func (rf *Raft) runLeader() {
 			}()
 		}
 	}
+}
+
+// improve: cache?
+func (rf *Raft) calculateCommitIndex(lastUpdateIndex int) int {
+	if rf.commitIndex > lastUpdateIndex || rf.logs.getEntry(lastUpdateIndex).Term != rf.currentTerm {
+		return rf.commitIndex
+	}
+	sum := 0
+	for peer := range rf.peers {
+		if rf.matchIndex[peer] >= lastUpdateIndex {
+			sum++
+		}
+		if sum >= rf.getPriorityNum() {
+			return lastUpdateIndex
+		}
+	}
+	return rf.commitIndex
 }

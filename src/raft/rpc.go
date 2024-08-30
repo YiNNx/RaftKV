@@ -13,7 +13,7 @@ func (rf *Raft) checkRespTerm(term int) bool {
 	rf.stateMu.Lock()
 	defer rf.stateMu.Unlock()
 	if term > rf.currentTerm {
-		rf.becomeFollower(term, -1)
+		rf.becomeFollower(term)
 		return false
 	}
 	return true
@@ -44,7 +44,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// If RPC request or response contains term T > currentTerm:
 	// set currentTerm = T, convert to follower
 	if args.Term > rf.currentTerm {
-		rf.becomeFollower(args.Term, -1)
+		rf.becomeFollower(args.Term)
 	}
 
 	rf.logMu.RLock()
@@ -86,8 +86,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.stateMu.Lock()
 	defer rf.stateMu.Unlock()
+
 	if args.Term > rf.currentTerm {
-		rf.becomeFollower(args.Term, args.LeaderID)
+		rf.becomeFollower(args.Term)
+	}
+	if args.LeaderID != rf.leaderID {
+		rf.updateLeader(args.LeaderID)
 	}
 
 	rf.logMu.Lock()
@@ -114,6 +118,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, rf.logs.getLastIndex())
+		rf.DPrintf("update commit index: %d", rf.commitIndex)
 	}
 
 	rf.electionTicker.Reset(getRandomElectionTimeout())

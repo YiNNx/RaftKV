@@ -26,7 +26,7 @@ var colors = []string{
 }
 
 func (rf *Raft) DPrintf(format string, a ...interface{}) {
-	colorPrefix := colors[rf.me] + fmt.Sprintf("[%d][term%d ld%d vote%d]", rf.me, rf.currentTerm, rf.leaderID, rf.voteFor) + "\033[39;49m"
+	colorPrefix := colors[rf.me] + fmt.Sprintf("[%d][term%d ld%d commit%d]", rf.me, rf.currentTerm, rf.leaderID, rf.commitIndex) + "\033[39;49m"
 	if rf.leaderID == rf.me {
 		colorPrefix = "\033[4m" + colorPrefix + "\033[0m"
 	}

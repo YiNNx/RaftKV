@@ -23,7 +23,7 @@ type Raft struct {
 	logs  EntryList
 
 	commitIndex int
-	lastApplied int
+	lastApplied int64
 
 	// for each server, index of the next log entry to send to that server
 	// (initialized to leader last log index + 1)
@@ -74,6 +74,14 @@ func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 		applyTicker:    time.NewTicker(getHeartbeatTime()),
 	}
 	return rf
+}
+
+func (rf *Raft) getLastApplied() int {
+	return int(atomic.LoadInt64(&rf.lastApplied))
+}
+
+func (rf *Raft) incrLastApplied() {
+	atomic.AddInt64(&rf.lastApplied, 1)
 }
 
 // >=
@@ -149,8 +157,8 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	rf.stateMu.RLock()
-	defer rf.stateMu.RUnlock()
+	rf.stateMu.Lock()
+	defer rf.stateMu.Unlock()
 
 	if rf.killed() || rf.me != rf.leaderID {
 		return -1, -1, false
@@ -161,6 +169,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	term := rf.currentTerm
 	index := rf.logs.append(command, term)
+	rf.matchIndex[rf.me] = index
 	isLeader := true
 
 	rf.appendTrigger <- AllPeers
@@ -206,10 +215,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	rf.becomeFollower(rf.currentTerm, -1)
+	rf.becomeFollower(rf.currentTerm)
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
+	go rf.apply()
 
 	return rf
 }
@@ -218,11 +228,10 @@ func (rf *Raft) apply() {
 	for {
 		select {
 		case <-rf.applyTicker.C:
-			rf.logMu.Lock()
-			defer rf.logMu.Unlock()
-			for rf.lastApplied < rf.commitIndex {
-				rf.lastApplied++
-				entry := rf.logs.getEntry(rf.lastApplied)
+			for rf.getLastApplied() < rf.commitIndex {
+				rf.incrLastApplied()
+				entry := rf.logs.getEntry(rf.getLastApplied())
+				rf.DPrintf("apply entry %d", entry.Index)
 				rf.applyCh <- ApplyMsg{
 					CommandValid:  true,
 					Command:       entry.Command,
