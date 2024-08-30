@@ -2,22 +2,62 @@ package kvraft
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"6.5840/labgob"
 	"6.5840/labrpc"
 	"6.5840/raft"
 )
 
-const Debug = true
+const Debug = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
 		log.Printf(format, a...)
 	}
 	return
+}
+
+func Highlightf1(format string, a ...interface{}) {
+	format = "\033[38;5;2m" + format + "\033[39;49m"
+	DPrintf(format, a...)
+}
+
+func Highlightf2(format string, a ...interface{}) {
+	format = "\033[38;5;6m" + format + "\033[39;49m"
+	DPrintf(format, a...)
+}
+
+var colors = []string{
+	"\033[38;5;2m",
+	"\033[38;5;45m",
+	"\033[38;5;6m",
+	"\033[38;5;3m",
+	"\033[38;5;204m",
+	"\033[38;5;111m",
+	"\033[38;5;184m",
+	"\033[38;5;69m",
+}
+
+// note: the debug printf will cause data race
+// but it's ok cause it's used for *debug* :)
+func (kv *KVServer) Debugf(format string, a ...interface{}) {
+	if !Debug {
+		return
+	}
+	prefix := fmt.Sprintf("[%d][kv]", kv.me)
+	prefix = colors[kv.me] + prefix + "\033[39;49m"
+	format = prefix + " " + format
+	DPrintf(format, a...)
+}
+
+func (kv *KVServer) HighLightf(format string, a ...interface{}) {
+	format = colors[kv.me] + format + "\033[39;49m"
+	kv.Debugf(format, a...)
 }
 
 type OpType string
@@ -32,6 +72,10 @@ type Op struct {
 	OpID string
 	Typ  OpType
 	Args interface{}
+}
+
+func (op *Op) String() string {
+	return fmt.Sprintf("[%s] %s %s", op.OpID[:4], op.Typ, op.Args)
 }
 
 func NewOp(opID string, opType OpType, args interface{}) Op {
@@ -63,7 +107,7 @@ type KVServer struct {
 	mu           *sync.Mutex
 	rf           *raft.Raft
 	applyCh      chan raft.ApplyMsg
-	notifier     map[string]chan OpRes
+	notifier     *sync.Map //map[string]chan OpRes
 	duplicatedOp *sync.Map
 
 	repo *KVRepositery
@@ -77,23 +121,30 @@ func (kv *KVServer) ListenApply() {
 		case <-kv.ctx.Done():
 			return
 		case msg := <-kv.applyCh:
-			go func() {
-				op := msg.Command.(Op)
-				notifyCh := kv.notifier[op.OpID]
-				_, loaded := kv.duplicatedOp.LoadOrStore(op.OpID, true)
-				if loaded {
-					if notifyCh != nil {
-						notifyCh <- OpRes{
-							Err: ErrSessionExpired,
-						}
-					}
-					return
-				}
-				res := kv.PrecessOp(op)
+			if msg.Command == nil {
+				continue
+			}
+			op := msg.Command.(Op)
+			kv.HighLightf("raft applied %d", msg.CommandIndex)
+			var notifyCh chan OpRes
+			if val, ok := kv.notifier.Load(op.OpID); ok {
+				notifyCh = val.(chan OpRes)
+			}
+
+			storedRes, loaded := kv.duplicatedOp.Load(op.OpID)
+			if loaded {
 				if notifyCh != nil {
-					notifyCh <- res
+					notifyCh <- storedRes.(OpRes)
 				}
-			}()
+				continue
+			}
+			res := kv.PrecessOp(op)
+			kv.HighLightf("process %d", msg.CommandIndex)
+			if notifyCh != nil {
+				kv.HighLightf("send %d res to client", msg.CommandIndex)
+				kv.duplicatedOp.Store(op.OpID, res)
+				notifyCh <- res
+			}
 		}
 	}
 }
@@ -119,12 +170,13 @@ func (kv *KVServer) PrecessOp(op Op) OpRes {
 }
 
 func (kv *KVServer) StartOp(op Op) (chan OpRes, Err) {
-	_, _, isLeader := kv.rf.Start(op)
+	index, term, isLeader := kv.rf.Start(op)
+	kv.HighLightf("start %d(%d)", index, term)
 	if !isLeader {
 		return nil, ErrWrongLeader
 	}
-	notifyCh := make(chan OpRes, 1)
-	kv.notifier[op.OpID] = notifyCh
+	notifyCh := make(chan OpRes, 1000)
+	kv.notifier.Store(op.OpID, notifyCh)
 	return notifyCh, OK
 }
 
@@ -136,6 +188,11 @@ func (kv *KVServer) Execute(opID string, opType OpType, args interface{}) OpRes 
 	}
 	for {
 		select {
+		case <-time.After(time.Duration(3000) * time.Millisecond):
+			return OpRes{
+				Reply: nil,
+				Err:   ErrTimeout,
+			}
 		case res := <-resCh:
 			return res
 		}
@@ -179,7 +236,6 @@ func (kv *KVServer) Kill() {
 	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
 	kv.cancel()
-	close(kv.applyCh)
 }
 
 func (kv *KVServer) killed() bool {
@@ -216,7 +272,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 		mu:           new(sync.Mutex),
 		rf:           raft.Make(servers, me, persister, applyCh),
 		applyCh:      applyCh,
-		notifier:     make(map[string]chan OpRes),
+		notifier:     new(sync.Map),
 		duplicatedOp: new(sync.Map),
 		repo:         NewKVRepositories(),
 		maxraftstate: maxraftstate,

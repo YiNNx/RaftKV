@@ -73,7 +73,7 @@ func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 
 		appendTrigger:  make(chan int, 100),
 		electionTicker: time.NewTicker(getRandomElectionTimeout()),
-		applyTicker:    time.NewTicker(getHeartbeatTime()),
+		applyTicker:    time.NewTicker(1 * time.Millisecond),
 	}
 	return rf
 }
@@ -160,8 +160,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
 	rf.HighLightf("STOP")
 	atomic.StoreInt32(&rf.dead, 1)
-	close(rf.applyCh)
-	close(rf.appendTrigger)
 	rf.stateCancel()
 	rf.electionTicker.Stop()
 	rf.applyTicker.Stop()

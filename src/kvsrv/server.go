@@ -15,16 +15,15 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 }
 
 type KVServer struct {
-	mu  sync.RWMutex
-	kvs map[string]string
-
-	duplicateOp sync.Map
+	dataMu       *sync.RWMutex
+	data         map[string]string
+	duplicatedOp sync.Map
 }
 
 func (kv *KVServer) get(key string) string {
-	kv.mu.RLock()
-	defer kv.mu.RUnlock()
-	return kv.kvs[key]
+	kv.dataMu.RLock()
+	defer kv.dataMu.RUnlock()
+	return kv.data[key]
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
@@ -32,35 +31,35 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 }
 
 func (kv *KVServer) put(key string, val string) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	kv.kvs[key] = val
+	kv.dataMu.Lock()
+	defer kv.dataMu.Unlock()
+	kv.data[key] = val
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
-	if _, loaded := kv.duplicateOp.LoadOrStore(args.OpID, true); !loaded {
+	if _, loaded := kv.duplicatedOp.LoadOrStore(args.OpID, true); !loaded {
 		kv.put(args.Key, args.Value)
 	}
 	reply.Value = kv.get(args.Key)
 }
 
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
-	if val, ok := kv.duplicateOp.Load(args.OpID); ok {
+	if val, ok := kv.duplicatedOp.Load(args.OpID); ok {
 		reply.Value = val.(string)
 		return
 	}
 	oldVal := kv.get(args.Key)
 	kv.put(args.Key, oldVal+args.Value)
 	reply.Value = oldVal
-	kv.duplicateOp.Store(args.OpID, reply.Value)
+	kv.duplicatedOp.Store(args.OpID, reply.Value)
 }
 
 func (kv *KVServer) Finish(args *FinishArgs, reply *FinishReply) {
-	kv.duplicateOp.LoadAndDelete(args.OpID)
+	kv.duplicatedOp.LoadAndDelete(args.OpID)
 }
 
 func StartKVServer() *KVServer {
 	kv := new(KVServer)
-	kv.kvs = make(map[string]string)
+	kv.data = make(map[string]string)
 	return kv
 }
