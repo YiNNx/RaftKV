@@ -7,7 +7,7 @@ import (
 )
 
 // Debugging
-const Debug = false
+const Debug = true
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
@@ -16,11 +16,11 @@ func DPrintf(format string, a ...interface{}) {
 }
 
 // no need to set seed
-func getRandomTime() time.Duration {
-	ms := 50 + (rand.Int63() % 300)
+func getRandomElectionTimeout() time.Duration {
+	ms := 800 + (rand.Int63() % 2000)
 	return time.Duration(ms) * time.Millisecond
 }
 
 func getHeartbeatTime() time.Duration {
-	return time.Duration(50) * time.Millisecond
+	return time.Duration(100) * time.Millisecond
 }

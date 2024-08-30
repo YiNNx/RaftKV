@@ -20,10 +20,12 @@ type RequestVoteReply struct {
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+
 	// always refuse to handle the request if the term is expired
 	if args.Term < rf.GetCurrentTerm() {
 		reply.Term = rf.GetCurrentTerm()
 		reply.VoteGranted = false
+		rf.DPrintf("refuse vote for %d", args.CandidateID)
 		return
 	}
 
@@ -36,11 +38,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// If votedFor is null or candidateId,
 	// and candidate's log is at least as up-to-date as receiver's log,
 	// grant vote
-	if rf.GetVoteFor() != -1 &&
-		((args.LastLogTerm == rf.GetCurrentTerm() && args.LastLogIndex >= rf.GetLogList().lastLogIndex) ||
-			args.LastLogTerm > rf.GetCurrentTerm()) {
+	if rf.GetVoteFor() == -1 &&
+		((args.LastLogTerm == rf.GetLogList().lastLogTerm && args.LastLogIndex >= rf.GetLogList().lastLogIndex) ||
+			args.LastLogTerm > rf.GetLogList().lastLogTerm) {
 		rf.grantVote(args.CandidateID)
 		reply.VoteGranted = true
+		rf.DPrintf("vote for %d", args.CandidateID)
 	}
 	reply.Term = rf.GetCurrentTerm()
 }
@@ -49,10 +52,10 @@ type AppendEntriesArgs struct {
 	Term     int64
 	LeaderID int64
 
-	prevLogIndex int64
-	prevLogTerm  int64
-	entries      []Entry
-	leaderCommit int64
+	PrevLogIndex int64
+	PrevLogTerm  int64
+	Entries      []Entry
+	LeaderCommit int64
 }
 
 type AppendEntriesReply struct {
@@ -74,7 +77,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	rf.becomeFollower(args.Term, args.LeaderID)
-	rf.electionTimeout.Reset(getRandomTime())
+	rf.electionTimeout.Reset(getRandomElectionTimeout())
 
 	reply.Success = true
 	reply.Term = rf.GetCurrentTerm()

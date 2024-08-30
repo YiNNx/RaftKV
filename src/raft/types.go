@@ -22,7 +22,7 @@ type ApplyMsg struct {
 }
 
 type Entry struct {
-	term    int64
+	Term    int64
 	Command interface{}
 }
 
