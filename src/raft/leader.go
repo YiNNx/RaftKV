@@ -42,7 +42,25 @@ func (rf *Raft) getPeerIndexList(peer int) []int {
 	return peers
 }
 
-func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, _ bool) {
+// improvement - cache?
+func (rf *Raft) calculateCommitIndex(lastUpdateIndex int) int {
+	if rf.commitIndex >= lastUpdateIndex || rf.logs.getEntry(lastUpdateIndex).Term != rf.currentTerm {
+		return rf.commitIndex
+	}
+	sum := 0
+	for peer := range rf.peers {
+		if rf.matchIndex[peer] >= lastUpdateIndex {
+			sum++
+		}
+		if sum >= rf.getPriorityNum() {
+			rf.Debugf("update commit index: %d", lastUpdateIndex)
+			return lastUpdateIndex
+		}
+	}
+	return rf.commitIndex
+}
+
+func (rf *Raft) appendEntries(peer int, entriesChan chan EntriesReq, snapshotChan chan SnapshotReq) {
 	rf.stateMu.RLock()
 	currentTerm := rf.currentTerm
 	defer rf.stateMu.RUnlock()
@@ -62,24 +80,33 @@ func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, _ bool) {
 				Entries:      entries,
 				LeaderCommit: rf.commitIndex,
 			}
-			ch <- AppendEntriesReq{
+			entriesChan <- EntriesReq{
 				args:       args,
 				peer:       peer,
 				startIndex: rf.nextIndex[peer],
 				endIndex:   rf.nextIndex[peer] - 1 + len(entries),
 			}
 		} else {
-
+			args := InstallSnapshotArgs{
+				Term:              currentTerm,
+				LeaderID:          rf.me,
+				LastIncludedIndex: rf.logs.PrevIndex,
+				LastIncludedTerm:  rf.logs.PrevTerm,
+				Snapshot:          rf.snapshot,
+			}
+			snapshotChan <- SnapshotReq{
+				args: args,
+				peer: peer,
+			}
 		}
 	}
-
 }
 
-func (rf *Raft) sendEntries(req AppendEntriesReq, respChan chan AppendEntriesRes) {
+func (rf *Raft) sendEntries(req EntriesReq, respChan chan EntriesRes) {
 	reply := AppendEntriesReply{}
 	ok := rf.sendAppendEntries(req.peer, &req.args, &reply)
 	if ok {
-		respChan <- AppendEntriesRes{
+		respChan <- EntriesRes{
 			reply:      reply,
 			peer:       req.peer,
 			startIndex: req.startIndex,
@@ -88,11 +115,11 @@ func (rf *Raft) sendEntries(req AppendEntriesReq, respChan chan AppendEntriesRes
 	}
 }
 
-func (rf *Raft) handleInstallSnapshot(req InstallSnapshotReq, respChan chan InstallSnapshotRes) {
+func (rf *Raft) sendSnapshot(req SnapshotReq, respChan chan SnapshotRes) {
 	reply := InstallSnapshotReply{}
 	ok := rf.sendInstallSnapshot(req.peer, &req.args, &reply)
 	if ok {
-		respChan <- InstallSnapshotRes{
+		respChan <- SnapshotRes{
 			reply:     reply,
 			peer:      req.peer,
 			lastIndex: req.args.LastIncludedIndex,
@@ -103,7 +130,6 @@ func (rf *Raft) handleInstallSnapshot(req InstallSnapshotReq, respChan chan Inst
 func (rf *Raft) runLeader() {
 	rf.stateMu.Lock()
 	rf.logMu.Lock()
-
 	leaderState := rf.becomeLeader()
 	rf.logMu.Unlock()
 	rf.stateMu.Unlock()
@@ -111,25 +137,25 @@ func (rf *Raft) runLeader() {
 	heartbeatTicker := time.NewTicker(getHeartbeatTime())
 	defer heartbeatTicker.Stop()
 
-	appendReqChan := make(chan AppendEntriesReq, 100)
-	appendRespChan := make(chan AppendEntriesRes, 100)
-	snapshotReqChan := make(chan InstallSnapshotReq, 100)
-	snapshotRespChan := make(chan InstallSnapshotRes, 100)
+	entriesReqChan := make(chan EntriesReq, 100)
+	entriesRespChan := make(chan EntriesRes, 100)
+	snapshotReqChan := make(chan SnapshotReq, 100)
+	snapshotRespChan := make(chan SnapshotRes, 100)
 
-	go rf.appendEntries(appendReqChan, AllPeers, true)
+	go rf.appendEntries(AllPeers, entriesReqChan, snapshotReqChan)
 
 	for rf.killed() == false {
 		select {
 		case <-leaderState.Done():
 			return
 		case <-heartbeatTicker.C:
-			go rf.appendEntries(appendReqChan, AllPeers, true)
+			go rf.appendEntries(AllPeers, entriesReqChan, snapshotReqChan)
 		case peer := <-rf.appendTrigger:
-			go rf.appendEntries(appendReqChan, peer, false)
-		case req := <-appendReqChan:
-			go rf.sendEntries(req, appendRespChan)
+			go rf.appendEntries(peer, entriesReqChan, snapshotReqChan)
+		case req := <-entriesReqChan:
+			go rf.sendEntries(req, entriesRespChan)
 		case req := <-snapshotReqChan:
-			go rf.handleInstallSnapshot(req, snapshotRespChan)
+			go rf.sendSnapshot(req, snapshotRespChan)
 		case resp := <-snapshotRespChan:
 			if ok := rf.checkRespTerm(resp.reply.Term); !ok {
 				return
@@ -138,7 +164,7 @@ func (rf *Raft) runLeader() {
 			rf.nextIndex[resp.peer] = max(rf.nextIndex[resp.peer], resp.lastIndex+1)
 			rf.matchIndex[resp.peer] = max(rf.matchIndex[resp.peer], resp.lastIndex)
 			rf.logMu.Unlock()
-		case resp := <-appendRespChan:
+		case resp := <-entriesRespChan:
 			if ok := rf.checkRespTerm(resp.reply.Term); !ok {
 				return
 			}
@@ -157,22 +183,4 @@ func (rf *Raft) runLeader() {
 			rf.logMu.Unlock()
 		}
 	}
-}
-
-// improvement - cache?
-func (rf *Raft) calculateCommitIndex(lastUpdateIndex int) int {
-	if rf.commitIndex >= lastUpdateIndex || rf.logs.getEntry(lastUpdateIndex).Term != rf.currentTerm {
-		return rf.commitIndex
-	}
-	sum := 0
-	for peer := range rf.peers {
-		if rf.matchIndex[peer] >= lastUpdateIndex {
-			sum++
-		}
-		if sum >= rf.getPriorityNum() {
-			rf.Debugf("update commit index: %d", lastUpdateIndex)
-			return lastUpdateIndex
-		}
-	}
-	return rf.commitIndex
 }

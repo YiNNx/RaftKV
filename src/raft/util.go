@@ -36,7 +36,7 @@ func (rf *Raft) Debugf(format string, a ...interface{}) {
 	if Colored {
 		prefix = colors[rf.me] + prefix + "\033[39;49m"
 		if rf.leaderID == rf.me {
-			prefix = "\033[4m" + prefix + "\033[0m"
+			prefix = "\033[4m" + prefix + fmt.Sprintf(" next %+v match %+v", rf.nextIndex, rf.matchIndex) + "\033[0m"
 		}
 	}
 	format = prefix + " " + format

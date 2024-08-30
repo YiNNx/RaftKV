@@ -140,7 +140,7 @@ type InstallSnapshotReply struct {
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
-		rf.Debugf("refuse append by %d", args.LeaderID)
+		rf.Debugf("refuse to install snapshot by %d", args.LeaderID)
 		reply.Term = *curTerm
 		return
 	}
@@ -165,7 +165,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 
 	rf.snapshot = args.Snapshot
 	go func() {
-		rf.HighLightf("apply snapshot %d[%d]", args.LastIncludedIndex, args.LastIncludedTerm)
+		rf.HighLightf("INSTALL SNAPSHOT %d[%d]", args.LastIncludedIndex, args.LastIncludedTerm)
 		rf.applyCh <- ApplyMsg{
 			SnapshotValid: true,
 			Snapshot:      args.Snapshot,
@@ -175,15 +175,14 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}()
 
 	rf.logs.tryCutPrefix(args.LastIncludedIndex)
-
+	rf.setLastApplied(args.LastIncludedIndex)
+	rf.commitIndex = max(rf.commitIndex, args.LastIncludedIndex)
 	if rf.logs.PrevIndex == args.LastIncludedIndex && rf.logs.PrevTerm == args.LastIncludedTerm {
 		return
 	}
 	rf.logs.Logs = []Entry{}
 	rf.logs.PrevIndex = args.LastIncludedIndex
 	rf.logs.PrevTerm = args.LastIncludedTerm
-	rf.commitIndex = args.LastIncludedIndex
-	rf.setLastApplied(args.LastIncludedIndex)
 }
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {

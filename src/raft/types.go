@@ -21,36 +21,36 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
-type RequestVoteReq struct {
+type VoteReq struct {
 	args RequestVoteArgs
 	peer int
 }
 
-type RequestVoteRes struct {
+type VoteRes struct {
 	reply RequestVoteReply
 	peer  int
 }
 
-type AppendEntriesReq struct {
+type EntriesReq struct {
 	args       AppendEntriesArgs
 	peer       int
 	startIndex int
 	endIndex   int
 }
 
-type AppendEntriesRes struct {
+type EntriesRes struct {
 	reply      AppendEntriesReply
 	peer       int
 	startIndex int
 	endIndex   int
 }
 
-type InstallSnapshotReq struct {
+type SnapshotReq struct {
 	args InstallSnapshotArgs
 	peer int
 }
 
-type InstallSnapshotRes struct {
+type SnapshotRes struct {
 	reply     InstallSnapshotReply
 	peer      int
 	lastIndex int

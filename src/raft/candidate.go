@@ -15,7 +15,7 @@ func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
 	return stateCtx
 }
 
-func (rf *Raft) startElection() (candidateState context.Context, voteReqChan chan RequestVoteReq) {
+func (rf *Raft) startElection() (candidateState context.Context, voteReqChan chan VoteReq) {
 	rf.stateMu.Lock()
 	candidateState = rf.becomeCandidate()
 	rf.stateMu.Unlock()
@@ -31,12 +31,12 @@ func (rf *Raft) startElection() (candidateState context.Context, voteReqChan cha
 		LastLogTerm:  rf.logs.getLastTerm(),
 	}
 
-	voteReqChan = make(chan RequestVoteReq, len(rf.peers)-1)
+	voteReqChan = make(chan VoteReq, len(rf.peers)-1)
 	for peer := range rf.peers {
 		if peer == int(rf.me) {
 			continue
 		}
-		voteReqChan <- RequestVoteReq{
+		voteReqChan <- VoteReq{
 			args: voteReqArgs,
 			peer: peer,
 		}
@@ -44,18 +44,18 @@ func (rf *Raft) startElection() (candidateState context.Context, voteReqChan cha
 	return candidateState, voteReqChan
 }
 
-func (rf *Raft) requestVote(req RequestVoteReq, voteResChan chan RequestVoteRes) {
+func (rf *Raft) requestVote(req VoteReq, voteResChan chan VoteRes) {
 	reply := RequestVoteReply{}
 	ok := rf.sendRequestVote(req.peer, &req.args, &reply)
 	if ok {
-		voteResChan <- RequestVoteRes{peer: req.peer, reply: reply}
+		voteResChan <- VoteRes{peer: req.peer, reply: reply}
 	}
 }
 
 // start election as a candidate
 func (rf *Raft) runCandidate() {
 	candidateState, voteReqChan := rf.startElection()
-	voteRespChan := make(chan RequestVoteRes, len(rf.peers)-1)
+	voteRespChan := make(chan VoteRes, len(rf.peers)-1)
 	voteGrantedNum := 1
 
 	for rf.killed() == false {
@@ -64,7 +64,7 @@ func (rf *Raft) runCandidate() {
 			return
 		case <-rf.electionTicker.C:
 			candidateState, voteReqChan = rf.startElection()
-			voteRespChan = make(chan RequestVoteRes, len(rf.peers)-1)
+			voteRespChan = make(chan VoteRes, len(rf.peers)-1)
 			voteGrantedNum = 1
 		case req := <-voteReqChan:
 			go rf.requestVote(req, voteRespChan)
