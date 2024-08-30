@@ -22,11 +22,11 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+func (rf Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
 	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
 		rf.Debugf("refuse vote for %d", args.CandidateID)
 		reply.Term = *curTerm
-		return
+		return nil
 	}
 
 	rf.stateMu.Lock()
@@ -55,6 +55,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.Debugf("refuse vote for %d", args.CandidateID)
 	}
 	reply.Term = rf.currentTerm
+	return nil
 }
 
 type AppendEntriesArgs struct {
@@ -71,11 +72,11 @@ type AppendEntriesReply struct {
 	Success bool
 }
 
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) error {
 	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
 		rf.Debugf("refuse append by %d", args.LeaderID)
 		reply.Term = *curTerm
-		return
+		return nil
 	}
 
 	rf.stateMu.Lock()
@@ -95,7 +96,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Success = false
 		reply.Term = rf.currentTerm
 		rf.Debugf("prev log %s not match leader's [%d(%d)]", prevLog, args.PrevLogIndex, args.PrevLogTerm)
-		return
+		return nil
 	}
 
 	if len(args.Entries) != 0 {
@@ -119,6 +120,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Success = true
 	reply.Term = rf.currentTerm
 	rf.electionTicker.Reset(getRandomElectionTimeout())
+	return nil
 }
 
 type InstallSnapshotArgs struct {
@@ -133,11 +135,11 @@ type InstallSnapshotReply struct {
 	Term int
 }
 
-func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) error {
 	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
 		rf.Debugf("refuse to install snapshot by %d", args.LeaderID)
 		reply.Term = *curTerm
-		return
+		return nil
 	}
 
 	rf.stateMu.Lock()
@@ -154,7 +156,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	reply.Term = rf.currentTerm
 
 	if rf.getLastApplied() > args.LastIncludedIndex {
-		return
+		return nil
 	}
 
 	rf.snapshot = args.Snapshot
@@ -172,11 +174,12 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.setLastApplied(args.LastIncludedIndex)
 	rf.commitIndex = max(rf.commitIndex, args.LastIncludedIndex)
 	if rf.logs.PrevIndex == args.LastIncludedIndex && rf.logs.PrevTerm == args.LastIncludedTerm {
-		return
+		return nil
 	}
 	rf.logs.Logs = []Entry{}
 	rf.logs.PrevIndex = args.LastIncludedIndex
 	rf.logs.PrevTerm = args.LastIncludedTerm
+	return nil
 }
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {

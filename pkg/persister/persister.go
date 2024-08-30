@@ -9,16 +9,44 @@ package persister
 // test with the original before submitting.
 //
 
-import "sync"
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path"
+	"strconv"
+	"sync"
+)
 
 type Persister struct {
-	mu        sync.Mutex
-	raftstate []byte
-	snapshot  []byte
+	mu            sync.Mutex
+	id            int
+	raftStatePath string
+	snapshotPath  string
+	raftstate     []byte
+	snapshot      []byte
 }
 
-func MakePersister() *Persister {
-	return &Persister{}
+func MakePersister(id int, restart bool, raftStatePath string, snapshotPath string) *Persister {
+	err := os.MkdirAll(raftStatePath, 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+	os.MkdirAll(snapshotPath, 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ps := &Persister{
+		mu:            sync.Mutex{},
+		id:            id,
+		raftStatePath: path.Join(raftStatePath, strconv.Itoa(id)),
+		snapshotPath:  path.Join(snapshotPath, strconv.Itoa(id)),
+	}
+	if !restart {
+		ps.Save(nil, nil)
+	}
+	return ps
 }
 
 func clone(orig []byte) []byte {
@@ -27,25 +55,24 @@ func clone(orig []byte) []byte {
 	return x
 }
 
-func (ps *Persister) Copy() *Persister {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	np := MakePersister()
-	np.raftstate = ps.raftstate
-	np.snapshot = ps.snapshot
-	return np
-}
-
 func (ps *Persister) ReadRaftState() []byte {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	return clone(ps.raftstate)
-}
 
-func (ps *Persister) RaftStateSize() int {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	return len(ps.raftstate)
+	file, err := os.OpenFile(ps.raftStatePath, os.O_RDONLY|os.O_CREATE, 0755)
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return nil
+	}
+	defer file.Close()
+
+	buffer := make([]byte, 1024)
+	_, err = file.Read(buffer)
+	if err != nil && err != io.EOF {
+		log.Println("Error reading from file:", err)
+		return nil
+	}
+	return buffer
 }
 
 // Save both Raft state and K/V snapshot as a single atomic action,
@@ -53,18 +80,50 @@ func (ps *Persister) RaftStateSize() int {
 func (ps *Persister) Save(raftstate []byte, snapshot []byte) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ps.raftstate = clone(raftstate)
-	ps.snapshot = clone(snapshot)
+
+	stateFile, err := os.OpenFile(ps.raftStatePath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0755)
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return
+	}
+	defer stateFile.Close()
+
+	_, err = stateFile.Write(raftstate)
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+		return
+	}
+
+	snapshotFile, err := os.OpenFile(ps.snapshotPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0755)
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return
+	}
+	defer snapshotFile.Close()
+
+	_, err = snapshotFile.Write(snapshot)
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+		return
+	}
 }
 
 func (ps *Persister) ReadSnapshot() []byte {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	return clone(ps.snapshot)
-}
 
-func (ps *Persister) SnapshotSize() int {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	return len(ps.snapshot)
+	file, err := os.OpenFile(ps.snapshotPath, os.O_RDONLY|os.O_CREATE, 0755)
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return nil
+	}
+	defer file.Close()
+
+	buffer := make([]byte, 1024)
+	_, err = file.Read(buffer)
+	if err != nil && err != io.EOF {
+		log.Println("Error reading from file:", err)
+		return nil
+	}
+	return buffer
 }
