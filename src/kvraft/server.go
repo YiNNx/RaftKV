@@ -1,15 +1,17 @@
 package kvraft
 
 import (
-	"6.5840/labgob"
-	"6.5840/labrpc"
-	"6.5840/raft"
+	"context"
 	"log"
 	"sync"
 	"sync/atomic"
+
+	"6.5840/labgob"
+	"6.5840/labrpc"
+	"6.5840/raft"
 )
 
-const Debug = false
+const Debug = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -18,37 +20,152 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
+type OpType string
+
+const (
+	OpGet    OpType = "Get"
+	OpPut    OpType = "Put"
+	OpAppend OpType = "Append"
+)
 
 type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
+	OpID string
+	Typ  OpType
+	Args interface{}
+}
+
+func NewOp(opID string, opType OpType, args interface{}) Op {
+	return Op{
+		OpID: opID,
+		Typ:  opType,
+		Args: args,
+	}
+}
+
+type OpRes struct {
+	Reply interface{}
+	Err   Err
+}
+
+func NewOpRes(err Err, reply interface{}) OpRes {
+	return OpRes{
+		Reply: reply,
+		Err:   err,
+	}
 }
 
 type KVServer struct {
-	mu      sync.Mutex
-	me      int
-	rf      *raft.Raft
-	applyCh chan raft.ApplyMsg
-	dead    int32 // set by Kill()
+	me     int
+	dead   int32 // set by Kill()
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	mu           *sync.Mutex
+	rf           *raft.Raft
+	applyCh      chan raft.ApplyMsg
+	notifier     map[string]chan OpRes
+	duplicatedOp *sync.Map
+
+	repo *KVRepositery
 
 	maxraftstate int // snapshot if log grows this big
-
-	// Your definitions here.
 }
 
-
-func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
+func (kv *KVServer) ListenApply() {
+	for !kv.killed() {
+		select {
+		case <-kv.ctx.Done():
+			return
+		case msg := <-kv.applyCh:
+			go func() {
+				op := msg.Command.(Op)
+				notifyCh := kv.notifier[op.OpID]
+				_, loaded := kv.duplicatedOp.LoadOrStore(op.OpID, true)
+				if loaded {
+					if notifyCh != nil {
+						notifyCh <- OpRes{
+							Err: ErrSessionExpired,
+						}
+					}
+					return
+				}
+				res := kv.PrecessOp(op)
+				if notifyCh != nil {
+					notifyCh <- res
+				}
+			}()
+		}
+	}
 }
 
-func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+func (kv *KVServer) PrecessOp(op Op) OpRes {
+	switch op.Typ {
+	case OpGet:
+		key := op.Args.(GetArgs).Key
+		val := kv.repo.Get(key)
+		return NewOpRes(OK, GetReply{Value: val})
+	case OpPut:
+		key := op.Args.(PutAppendArgs).Key
+		val := op.Args.(PutAppendArgs).Value
+		kv.repo.Put(key, val)
+		return NewOpRes(OK, nil)
+	case OpAppend:
+		key := op.Args.(PutAppendArgs).Key
+		val := op.Args.(PutAppendArgs).Value
+		kv.repo.Append(key, val)
+		return NewOpRes(OK, nil)
+	}
+	return NewOpRes("invalid op", nil)
 }
 
-func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+func (kv *KVServer) StartOp(op Op) (chan OpRes, Err) {
+	_, _, isLeader := kv.rf.Start(op)
+	if !isLeader {
+		return nil, ErrWrongLeader
+	}
+	notifyCh := make(chan OpRes, 1)
+	kv.notifier[op.OpID] = notifyCh
+	return notifyCh, OK
 }
+
+func (kv *KVServer) Execute(opID string, opType OpType, args interface{}) OpRes {
+	op := NewOp(opID, opType, args)
+	resCh, err := kv.StartOp(op)
+	if err != OK {
+		return NewOpRes(err, nil)
+	}
+	for {
+		select {
+		case res := <-resCh:
+			return res
+		}
+	}
+}
+
+func (kv *KVServer) Get(req *Request, res *Response) {
+	opRes := kv.Execute(req.OpID, OpGet, req.Args)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return
+}
+
+func (kv *KVServer) Put(req *Request, res *Response) {
+	opRes := kv.Execute(req.OpID, OpPut, req.Args)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return
+}
+
+func (kv *KVServer) Append(req *Request, res *Response) {
+	opRes := kv.Execute(req.OpID, OpAppend, req.Args)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return
+}
+
+// func (kv *KVServer) Finish(args *FinishArgs, reply *FinishReply) {
+// 	kv.duplicatedOp.Delete(args.OpID)
+// }
 
 // the tester calls Kill() when a KVServer instance won't
 // be needed again. for your convenience, we supply
@@ -61,7 +178,8 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 func (kv *KVServer) Kill() {
 	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
-	// Your code here, if desired.
+	kv.cancel()
+	close(kv.applyCh)
 }
 
 func (kv *KVServer) killed() bool {
@@ -85,17 +203,24 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	labgob.Register(Op{})
+	labgob.Register(PutAppendArgs{})
+	labgob.Register(GetArgs{})
+	labgob.Register(GetReply{})
 
-	kv := new(KVServer)
-	kv.me = me
-	kv.maxraftstate = maxraftstate
-
-	// You may need initialization code here.
-
-	kv.applyCh = make(chan raft.ApplyMsg)
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-
-	// You may need initialization code here.
-
+	applyCh := make(chan raft.ApplyMsg)
+	ctx, cancel := context.WithCancel(context.Background())
+	kv := &KVServer{
+		me:           me,
+		ctx:          ctx,
+		cancel:       cancel,
+		mu:           new(sync.Mutex),
+		rf:           raft.Make(servers, me, persister, applyCh),
+		applyCh:      applyCh,
+		notifier:     make(map[string]chan OpRes),
+		duplicatedOp: new(sync.Map),
+		repo:         NewKVRepositories(),
+		maxraftstate: maxraftstate,
+	}
+	go kv.ListenApply()
 	return kv
 }
