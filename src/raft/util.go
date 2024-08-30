@@ -6,7 +6,7 @@ import (
 )
 
 // Debugging
-const Debug = false
+const Debug = true
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
@@ -27,7 +27,7 @@ var colors = []string{
 
 // note: the debug printf will cause data race
 // but it's ok cause it's used for *debug* :)
-func (rf *Raft) DPrintf(format string, a ...interface{}) {
+func (rf *Raft) Debugf(format string, a ...interface{}) {
 	if !Debug {
 		return
 	}

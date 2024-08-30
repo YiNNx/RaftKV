@@ -17,6 +17,7 @@ func getHeartbeatTime() time.Duration {
 
 func (rf *Raft) grantVote(candidate int) {
 	rf.voteFor = candidate
+	rf.persist()
 	rf.electionTicker.Reset(getRandomElectionTimeout())
 }
 
@@ -24,7 +25,24 @@ func (rf *Raft) updateTerm(term int) {
 	if term != rf.currentTerm {
 		rf.currentTerm = term
 		rf.voteFor = -1
+		rf.persist()
 	}
+}
+
+func (rf *Raft) tryRemoveLogTail(start int) {
+	rf.logs.tryRemoveTail(start)
+	rf.persist()
+}
+
+func (rf *Raft) appendLog(command interface{}, term int) int {
+	res := rf.logs.append(command, term)
+	rf.persist()
+	return res
+}
+
+func (rf *Raft) appendLogList(entries []Entry) {
+	rf.logs.appendEntries(entries)
+	rf.persist()
 }
 
 func (rf *Raft) updateLeader(leaderID int) {
@@ -61,7 +79,7 @@ func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
 	rf.updateTerm(rf.currentTerm + 1)
 	rf.updateLeader(-1)
 	rf.grantVote(rf.me)
-	rf.DPrintf("CANDIDATE")
+	rf.Debugf("CANDIDATE")
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
@@ -147,7 +165,7 @@ func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 		rf.nextIndex[i] = rf.logs.getLastIndex() + 1
 	}
 
-	rf.DPrintf("LEADER")
+	rf.Debugf("LEADER")
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
@@ -172,6 +190,10 @@ func (rf *Raft) getPeerIndexList(peer int) []int {
 }
 
 func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, heartbeat bool) {
+	rf.stateMu.RLock()
+	currentTerm := rf.currentTerm
+	defer rf.stateMu.RUnlock()
+
 	rf.logMu.RLock()
 	defer rf.logMu.RUnlock()
 
@@ -188,7 +210,7 @@ func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, heartbeat bool
 		}
 
 		args := AppendEntriesArgs{
-			Term:         rf.currentTerm,
+			Term:         currentTerm,
 			LeaderID:     rf.me,
 			PrevLogIndex: prevLog.Index,
 			PrevLogTerm:  prevLog.Term,
@@ -258,7 +280,7 @@ func (rf *Raft) runLeader() {
 
 				if resp.reply.Success {
 					if resp.endIndex >= resp.startIndex {
-						rf.DPrintf("appendEntries ok - peer %d logs%s-%s", resp.peer, rf.logs.getEntry(resp.startIndex), rf.logs.getEntry(resp.endIndex))
+						rf.Debugf("appendEntries ok - peer %d logs%s-%s", resp.peer, rf.logs.getEntry(resp.startIndex), rf.logs.getEntry(resp.endIndex))
 					}
 					rf.nextIndex[resp.peer] = max(rf.nextIndex[resp.peer], resp.endIndex+1)
 					rf.matchIndex[resp.peer] = max(rf.matchIndex[resp.peer], resp.endIndex)
@@ -283,7 +305,7 @@ func (rf *Raft) calculateCommitIndex(lastUpdateIndex int) int {
 			sum++
 		}
 		if sum >= rf.getPriorityNum() {
-			rf.DPrintf("update commit index: %d", lastUpdateIndex)
+			rf.Debugf("update commit index: %d", lastUpdateIndex)
 			return lastUpdateIndex
 		}
 	}
