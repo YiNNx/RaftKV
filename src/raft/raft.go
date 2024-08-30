@@ -72,6 +72,7 @@ func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 		nextIndex:   nil,
 		matchIndex:  nil,
 
+		appendTrigger:  make(chan int, 100),
 		electionTicker: time.NewTicker(getRandomElectionTimeout()),
 		applyTicker:    time.NewTicker(getHeartbeatTime()),
 	}
@@ -188,9 +189,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // confusing debug output. any goroutine with a long-running loop
 // should call killed() to check whether it should stop.
 func (rf *Raft) Kill() {
-	rf.HighLightf("DEAD!")
+	rf.HighLightf("STOP")
 	atomic.StoreInt32(&rf.dead, 1)
 	close(rf.applyCh)
+	close(rf.appendTrigger)
 	rf.stateCancel()
 	rf.electionTicker.Stop()
 	rf.applyTicker.Stop()

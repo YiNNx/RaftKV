@@ -7,6 +7,7 @@ import (
 
 // Debugging
 const Debug = true
+const Colored = false
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
@@ -31,16 +32,21 @@ func (rf *Raft) Debugf(format string, a ...interface{}) {
 	if !Debug {
 		return
 	}
-	colorPrefix := colors[rf.me] + fmt.Sprintf("[%d][term%d ld%d commit%d]", rf.me, rf.currentTerm, rf.leaderID, rf.commitIndex) + "\033[39;49m"
-	if rf.leaderID == rf.me {
-		colorPrefix = "\033[4m" + colorPrefix + "\033[0m"
+	prefix := fmt.Sprintf("[%d][term%d ld%d commit%d]", rf.me, rf.currentTerm, rf.leaderID, rf.commitIndex)
+	if Colored {
+		prefix = colors[rf.me] + prefix + "\033[39;49m"
+		if rf.leaderID == rf.me {
+			prefix = "\033[4m" + prefix + "\033[0m"
+		}
 	}
-	format = colorPrefix + " " + format
+	format = prefix + " " + format
 	DPrintf(format, a...)
 }
 
 func (rf *Raft) HighLightf(format string, a ...interface{}) {
-	format = colors[rf.me] + format + "\033[39;49m"
+	if Colored {
+		format = colors[rf.me] + format + "\033[39;49m"
+	}
 	rf.Debugf(format, a...)
 }
 
