@@ -5,14 +5,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"strings"
 
-	"github.com/BurntSushi/toml"
-
 	"raftkv/internal/client"
-	"raftkv/internal/common"
 	"raftkv/pkg/rpc"
 )
 
@@ -25,10 +22,10 @@ type Cli struct {
 	clerk *client.Clerk
 }
 
-func NewCli(nodes []common.Node) *Cli {
-	rpcEnds := make([]*rpc.ClientEnd, len(nodes))
-	for _, node := range nodes {
-		rpcEnds[node.ID] = rpc.MakeClientEnd(node.Host + node.Port)
+func NewCli(addrList []string) *Cli {
+	rpcEnds := make([]*rpc.ClientEnd, len(addrList))
+	for i, addr := range addrList {
+		rpcEnds[i] = rpc.MakeClientEnd(addr)
 	}
 	return &Cli{
 		clerk: client.MakeClerk(rpcEnds),
@@ -55,7 +52,7 @@ func (cli *Cli) HandleCommand(command string, args []string) (output string, err
 		cli.clerk.Append(args[0], args[1])
 		output = "ok"
 	case "EXIT":
-		return
+		return "", io.EOF
 	default:
 		return "", ErrInvalidCommand
 	}
@@ -71,6 +68,9 @@ func (cli *Cli) Run() {
 		command := strings.ToUpper(fields[0])
 		args := fields[1:]
 		output, err := cli.HandleCommand(command, args)
+		if err == io.EOF {
+			return
+		}
 		if err != nil {
 			fmt.Println(err)
 			continue
@@ -80,13 +80,13 @@ func (cli *Cli) Run() {
 }
 
 func main() {
-	configPath := flag.String("c", "config.toml", "config file")
+	addr := flag.String("addr", "", "kv server address list, split by ',' ")
 	flag.Parse()
-	var config common.Config
-	if _, err := toml.DecodeFile(*configPath, &config); err != nil {
-		log.Fatal(err)
+	if len(*addr) == 0 {
+		fmt.Print("arg -addr missing\n")
+		return
 	}
 
-	cli := NewCli(config.Cluster.Nodes)
+	cli := NewCli(strings.Split(*addr, ","))
 	cli.Run()
 }

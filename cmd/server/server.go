@@ -30,14 +30,14 @@ func StartServer(id int, nodes []common.Node, restart bool, persisterConf common
 		rpcServer,
 		rpcEnds,
 		id,
-		persister.MakePersister(id, restart,persisterConf.State, persisterConf.Snapshot),
+		persister.MakePersister(id, restart, persisterConf.State, persisterConf.Snapshot),
 	)
 	return rpcServer.Run()
 }
 
 func main() {
-	id := flag.Int("index", -1, "specify current node id in cluster config")
-	restart := flag.Bool("restart", false, "recover from last crash")
+	id := flag.Int("id", -1, "specify current node id in cluster config")
+	restart := flag.Bool("recover", false, "recover from last crash")
 	configPath := flag.String("c", "config.toml", "config file")
 	flag.Parse()
 	var config common.Config
