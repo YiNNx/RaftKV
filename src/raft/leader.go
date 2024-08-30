@@ -140,7 +140,6 @@ func (rf *Raft) runLeader() {
 	heartbeatTicker := time.NewTicker(getHeartbeatTime())
 	defer heartbeatTicker.Stop()
 
-	go rf.Start(nil) // no-op
 	go rf.appendEntries(AllPeers, entriesReqChan, snapshotReqChan)
 
 	for rf.killed() == false {

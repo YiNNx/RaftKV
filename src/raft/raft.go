@@ -142,7 +142,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = index
 	isLeader := true
 
-	rf.HighLightf("START COMMAND %s", rf.logs.getEntry(index))
+	rf.HighLightf("START COMMAND %s %+v", rf.logs.getEntry(index), command)
 	rf.appendTrigger <- AllPeers
 
 	return index, term, isLeader
