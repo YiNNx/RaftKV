@@ -36,6 +36,7 @@ func (rf *Raft) updateLeader(leaderID int) {
 // turn into a follower with leader unawareness
 func (rf *Raft) becomeFollower(term int) (stateCtx context.Context) {
 	rf.updateTerm(term)
+	rf.updateLeader(-1)
 
 	if rf.stateCancel != nil {
 		rf.stateCancel()
@@ -58,8 +59,9 @@ func (rf *Raft) ticker() {
 
 func (rf *Raft) becomeCandidate() (stateCtx context.Context) {
 	rf.updateTerm(rf.currentTerm + 1)
+	rf.updateLeader(-1)
 	rf.grantVote(rf.me)
-	rf.DPrintf("CANDIDATE")
+	rf.DPrintf("CANDIDATE %s", rf.logs.getEntry(rf.logs.lastIndex))
 
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
@@ -181,6 +183,8 @@ func (rf *Raft) appendEntries(ch chan AppendEntriesReq, peer int, heartbeat bool
 		var entries []Entry
 		if !heartbeat && startIndex <= endIndex {
 			entries = rf.logs.getSlice(startIndex, endIndex)
+		} else {
+			endIndex = startIndex - 1
 		}
 
 		args := AppendEntriesArgs{
@@ -253,12 +257,12 @@ func (rf *Raft) runLeader() {
 				defer rf.logMu.Unlock()
 
 				if resp.reply.Success {
+					if resp.endIndex >= resp.startIndex {
+						rf.DPrintf("appendEntries ok - peer %d logs%s-%s", resp.peer, rf.logs.getEntry(resp.startIndex), rf.logs.getEntry(resp.endIndex))
+					}
 					rf.nextIndex[resp.peer] = max(rf.nextIndex[resp.peer], resp.endIndex+1)
 					rf.matchIndex[resp.peer] = max(rf.matchIndex[resp.peer], resp.endIndex)
 					rf.commitIndex = rf.calculateCommitIndex(resp.endIndex)
-					if resp.endIndex >= resp.startIndex {
-						rf.DPrintf("append succeed: %+v commit index: %+v", resp, rf.commitIndex)
-					}
 				} else {
 					rf.nextIndex[resp.peer] = resp.startIndex - 1
 					rf.appendTrigger <- resp.peer
@@ -270,7 +274,7 @@ func (rf *Raft) runLeader() {
 
 // improve: cache?
 func (rf *Raft) calculateCommitIndex(lastUpdateIndex int) int {
-	if rf.commitIndex > lastUpdateIndex || rf.logs.getEntry(lastUpdateIndex).Term != rf.currentTerm {
+	if rf.commitIndex >= lastUpdateIndex || rf.logs.getEntry(lastUpdateIndex).Term != rf.currentTerm {
 		return rf.commitIndex
 	}
 	sum := 0
@@ -279,6 +283,7 @@ func (rf *Raft) calculateCommitIndex(lastUpdateIndex int) int {
 			sum++
 		}
 		if sum >= rf.getPriorityNum() {
+			rf.DPrintf("update commit index: %d", lastUpdateIndex)
 			return lastUpdateIndex
 		}
 	}

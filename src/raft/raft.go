@@ -172,6 +172,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = index
 	isLeader := true
 
+	rf.DPrintf("START COMMAND %s", rf.logs.getEntry(index))
 	rf.appendTrigger <- AllPeers
 
 	return index, term, isLeader
@@ -231,7 +232,7 @@ func (rf *Raft) apply() {
 			for rf.getLastApplied() < rf.commitIndex {
 				rf.incrLastApplied()
 				entry := rf.logs.getEntry(rf.getLastApplied())
-				rf.DPrintf("apply entry %d", entry.Index)
+				rf.DPrintf("apply entry %s", entry)
 				rf.applyCh <- ApplyMsg{
 					CommandValid:  true,
 					Command:       entry.Command,
