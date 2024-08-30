@@ -3,7 +3,6 @@ package raft
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 type RequestVoteArgs struct {
-	// Your data here (3A, 3B).
 	Term int64
 
 	CandidateID  int64
@@ -14,7 +13,6 @@ type RequestVoteArgs struct {
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 type RequestVoteReply struct {
-	// Your data here (3A).
 	Term int64
 
 	VoteGranted bool
@@ -22,8 +20,6 @@ type RequestVoteReply struct {
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (3A, 3B).
-
 	// always refuse to handle the request if the term is expired
 	if args.Term < rf.GetCurrentTerm() {
 		reply.Term = rf.GetCurrentTerm()
@@ -43,7 +39,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if rf.GetVoteFor() != -1 &&
 		((args.LastLogTerm == rf.GetCurrentTerm() && args.LastLogIndex >= rf.GetLogList().lastLogIndex) ||
 			args.LastLogTerm > rf.GetCurrentTerm()) {
-		rf.GrantVote(args.CandidateID)
+		rf.grantVote(args.CandidateID)
 		reply.VoteGranted = true
 	}
 	reply.Term = rf.GetCurrentTerm()
@@ -66,8 +62,6 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	// Your code here (3A, 3B).
-
 	// always refuse to handle the request if the term is expired
 	if args.Term < rf.GetCurrentTerm() {
 		reply.Success = false
