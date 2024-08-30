@@ -36,7 +36,7 @@ type Raft struct {
 	// custom state
 
 	// mutex for the server state machine
-	stateMu *sync.Mutex
+	stateMu *sync.RWMutex
 	// boardcast all goroutines that rf turn into a follower by close the chan
 	// re init - being candidate / leader
 	// close - being follower
@@ -66,7 +66,7 @@ func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 		nextIndex:  nil,
 		matchIndex: nil,
 
-		stateMu:  &sync.Mutex{},
+		stateMu:  &sync.RWMutex{},
 		leaderID: -1,
 
 		electionTimeout: time.NewTicker(getRandomElectionTimeout()),
@@ -131,6 +131,8 @@ func (rf *Raft) DPrintf(format string, a ...interface{}) {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
+	rf.stateMu.RLock()
+	defer rf.stateMu.RUnlock()
 	return int(rf.currentTerm), rf.leaderID == rf.me
 }
 
