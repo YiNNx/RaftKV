@@ -8,18 +8,20 @@ import (
 // ----- LEADER -----
 
 func (rf *Raft) becomeLeader() (stateCtx context.Context) {
-	rf.leaderID = rf.me
-	close(rf.appendTrigger)
-	rf.appendTrigger = make(chan int, 100)
+	rf.stateMu.Lock()
+	defer rf.logMu.Unlock()
+	rf.logMu.Lock()
+	defer rf.stateMu.Unlock()
 
+	close(rf.appendTrigger)
+	rf.leaderID = rf.me
+	rf.appendTrigger = make(chan int, 100)
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
 	for i := range rf.nextIndex {
 		rf.nextIndex[i] = rf.logs.getLastIndex() + 1
 	}
-
 	rf.HighLightf("LEADER")
-
 	rf.stateCancel()
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
 	return stateCtx
@@ -128,19 +130,15 @@ func (rf *Raft) sendSnapshot(req SnapshotReq, respChan chan SnapshotRes) {
 }
 
 func (rf *Raft) runLeader() {
-	rf.stateMu.Lock()
-	rf.logMu.Lock()
 	leaderState := rf.becomeLeader()
-	rf.logMu.Unlock()
-	rf.stateMu.Unlock()
-
-	heartbeatTicker := time.NewTicker(getHeartbeatTime())
-	defer heartbeatTicker.Stop()
 
 	entriesReqChan := make(chan EntriesReq, 100)
 	entriesRespChan := make(chan EntriesRes, 100)
 	snapshotReqChan := make(chan SnapshotReq, 100)
 	snapshotRespChan := make(chan SnapshotRes, 100)
+
+	heartbeatTicker := time.NewTicker(getHeartbeatTime())
+	defer heartbeatTicker.Stop()
 
 	go rf.appendEntries(AllPeers, entriesReqChan, snapshotReqChan)
 
