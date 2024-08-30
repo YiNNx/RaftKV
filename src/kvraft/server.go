@@ -58,7 +58,7 @@ func (kv *KVServer) WaitTilApply(opID string, opType OpType, args interface{}) O
 		if !isLeader {
 			return nil, ErrWrongLeader
 		}
-		// kv.HighLightf("start %d(%d)", index, term)
+		kv.HighLightf("start %s", &op)
 		notifyCh := make(chan OpRes, 1000)
 		kv.notifier.Store(op.OpID, notifyCh)
 		return notifyCh, OK
@@ -68,7 +68,7 @@ func (kv *KVServer) WaitTilApply(opID string, opType OpType, args interface{}) O
 	}
 	for {
 		select {
-		case <-time.After(time.Duration(3000) * time.Millisecond):
+		case <-time.After(time.Duration(100) * time.Millisecond):
 			return OpRes{
 				Reply: nil,
 				Err:   ErrTimeout,
@@ -80,7 +80,7 @@ func (kv *KVServer) WaitTilApply(opID string, opType OpType, args interface{}) O
 }
 
 func (kv *KVServer) NoOpTicker() {
-	ticker := time.NewTicker(time.Duration(100) * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(50) * time.Millisecond)
 	for !kv.killed() {
 		select {
 		case <-ticker.C:
@@ -103,7 +103,7 @@ func (kv *KVServer) ListenApply() {
 				defer kv.mu.Unlock()
 
 				op := msg.Command.(Op)
-				// kv.HighLightf("raft applied %d", msg.CommandIndex)
+
 				var notifyCh chan OpRes
 				if val, ok := kv.notifier.Load(op.OpID); ok {
 					notifyCh = val.(chan OpRes)
@@ -116,11 +116,13 @@ func (kv *KVServer) ListenApply() {
 					}
 					return
 				}
-				// kv.HighLightf("exec [%d] %s", msg.CommandIndex, &op)
 				res := kv.Execute(op)
+				if _, isLeader := kv.rf.GetState(); isLeader {
+					kv.Debugf("exec [%d] %s res", msg.CommandIndex, &op)
+				}
 				kv.duplicatedOp.Store(op.OpID, res)
 				if _, isLeader := kv.rf.GetState(); notifyCh != nil && isLeader {
-					// kv.HighLightf("send %d res to client", msg.CommandIndex)
+					kv.HighLightf("send %d res to client", msg.CommandIndex)
 					notifyCh <- res
 				}
 			}()
@@ -161,9 +163,11 @@ func (kv *KVServer) Execute(op Op) OpRes {
 // about this, but it may be convenient (for example)
 // to suppress debug output from a Kill()ed instance.
 func (kv *KVServer) Kill() {
+	kv.HighLightf("%+v", kv.repo.data)
 	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
 	kv.cancel()
+	kv.repo = NewKVRepositories()
 }
 
 func (kv *KVServer) killed() bool {
@@ -206,5 +210,6 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 		maxraftstate: maxraftstate,
 	}
 	go kv.ListenApply()
+	go kv.NoOpTicker()
 	return kv
 }

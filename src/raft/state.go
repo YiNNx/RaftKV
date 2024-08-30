@@ -90,7 +90,6 @@ func (rf *Raft) apply() {
 			func() {
 				rf.logMu.RLock()
 				defer rf.logMu.RUnlock()
-
 				lastApplied := rf.getLastApplied()
 				if rf.commitIndex == lastApplied {
 					return
@@ -108,8 +107,9 @@ func (rf *Raft) apply() {
 				rf.setLastApplied(rf.commitIndex)
 
 				go func() {
+					rf.applyChMu.Lock()
+					defer rf.applyChMu.Unlock()
 					for _, msg := range msgList {
-						rf.Debugf("apply entry %d", msg.CommandIndex)
 						rf.applyCh <- msg
 					}
 				}()

@@ -23,7 +23,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) TryCall(svcMeth string, args interface{}) interface{} {
 	i := atomic.LoadUint64(&ck.cacheLeader)
 	opID := uuid.New().String()
-	DPrintf("[client] try call [%s]", opID[:4])
+	// DPrintf("[client] try call [%s] %s %+v", opID[:4], svcMeth, args)
 	for {
 		var res Response
 		i = i % uint64(len(ck.servers))
@@ -31,7 +31,9 @@ func (ck *Clerk) TryCall(svcMeth string, args interface{}) interface{} {
 			OpID: opID,
 			Args: args,
 		}, &res) {
-			DPrintf("[client] got res from %d: [%s], err %s", i, opID[:4], res.Err)
+			if res.Err != ErrWrongLeader {
+				DPrintf("[client] got res from %d: [%s %+v], res %+v", i, svcMeth, args, res)
+			}
 			err := res.Err
 			if err == OK {
 				atomic.StoreUint64(&ck.cacheLeader, i)
