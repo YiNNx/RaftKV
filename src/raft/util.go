@@ -1,9 +1,8 @@
 package raft
 
 import (
+	"fmt"
 	"log"
-	"math/rand"
-	"time"
 )
 
 // Debugging
@@ -15,12 +14,11 @@ func DPrintf(format string, a ...interface{}) {
 	}
 }
 
-// no need to set seed
-func getRandomElectionTimeout() time.Duration {
-	ms := 800 + (rand.Int63() % 2000)
-	return time.Duration(ms) * time.Millisecond
+var colors = []string{
+	"\u001B[36m", "\u001B[32m", "\u001B[34m", "\u001B[35m", "\u001B[33m",
 }
 
-func getHeartbeatTime() time.Duration {
-	return time.Duration(100) * time.Millisecond
+func (rf *Raft) DPrintf(format string, a ...interface{}) {
+	format = colors[rf.me%5] + fmt.Sprintf("[%d][term%d ld%d vote%d] ", rf.me, rf.currentTerm, rf.leaderID, rf.voteFor) + "\u001B[0m" + format
+	DPrintf(format, a...)
 }

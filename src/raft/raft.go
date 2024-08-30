@@ -2,7 +2,6 @@ package raft
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,36 +11,28 @@ import (
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
-	// for lab setting
-	mu        *sync.Mutex         // Lock to protect shared access to this peer's state
+	// for lab config
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
-	me        int64               // this peer's index into peers[]
+	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 	applyCh   chan ApplyMsg
 
-	// persitent state
-	currentTerm int64
-	voteFor     int64
+	// log state
 	logs        LogList
+	commitIndex int
+	lastApplied int
 
-	// volatile state
-	commitIndex int64
-	lastApplied int64
+	nextIndex  []int
+	matchIndex []int
 
-	// volatile state for leader
-	nextIndex  []int64
-	matchIndex []int64
+	// node state
+	stateMu     *sync.RWMutex
+	leaderID    int
+	currentTerm int
+	voteFor     int
 
-	// custom state
-
-	// mutex for the server state machine
-	stateMu *sync.RWMutex
-	// boardcast all goroutines that rf turn into a follower by close the chan
-	// re init - being candidate / leader
-	// close - being follower
 	stateCancel context.CancelFunc
-	leaderID    int64
 
 	electionTimeout *time.Ticker
 }
@@ -49,83 +40,35 @@ type Raft struct {
 func NewRaftInstance(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{
-		mu:        &sync.Mutex{},
 		peers:     peers,
 		persister: persister,
-		me:        int64(me),
+		me:        int(me),
 		dead:      0,
 		applyCh:   applyCh,
 
+		stateMu:     &sync.RWMutex{},
 		currentTerm: 0,
 		voteFor:     -1,
-		logs:        InitLogList(),
+		leaderID:    -1,
 
+		logs:        InitLogList(),
 		commitIndex: 0,
 		lastApplied: 0,
-
-		nextIndex:  nil,
-		matchIndex: nil,
-
-		stateMu:  &sync.RWMutex{},
-		leaderID: -1,
+		nextIndex:   nil,
+		matchIndex:  nil,
 
 		electionTimeout: time.NewTicker(getRandomElectionTimeout()),
 	}
 	return rf
 }
 
-func (rf *Raft) SetLeaderID(leaderID int64) {
-	atomic.StoreInt64(&rf.leaderID, leaderID)
-}
-
-func (rf *Raft) GetLeaderID() int64 {
-	return atomic.LoadInt64(&rf.leaderID)
-}
-
-func (rf *Raft) SetCurrentTerm(term int64) {
-	atomic.StoreInt64(&rf.currentTerm, term)
-}
-
-func (rf *Raft) GetCurrentTerm() int64 {
-	return atomic.LoadInt64(&rf.currentTerm)
-}
-
-func (rf *Raft) SetVoteFor(voteFor int64) {
-	atomic.StoreInt64(&rf.voteFor, voteFor)
-}
-
-func (rf *Raft) GetVoteFor() int64 {
-	return atomic.LoadInt64(&rf.voteFor)
-}
-
-func (rf *Raft) GetPriorityNum() int {
+// >=
+func (rf *Raft) getPriorityNum() int {
 	return (len(rf.peers) + 1) / 2
 }
 
-func (rf *Raft) GetLogList() LogList {
+func (rf *Raft) getLogList() LogList {
 	return rf.logs
-}
-
-func (rf *Raft) grantVote(candidate int64) {
-	rf.SetVoteFor(candidate)
-	rf.electionTimeout.Reset(getRandomElectionTimeout())
-}
-
-func (rf *Raft) updateTermInfo(term int64, termLeader int64) {
-	if term != rf.GetCurrentTerm() {
-		rf.SetCurrentTerm(term)
-		rf.SetVoteFor(-1)
-	}
-	rf.SetLeaderID(termLeader)
-}
-
-var colors = []string{
-	"\u001B[36m", "\u001B[32m", "\u001B[34m", "\u001B[35m", "\u001B[33m",
-}
-
-func (rf *Raft) DPrintf(format string, a ...interface{}) {
-	format = colors[rf.me%5] + fmt.Sprintf("[%d][term%d ld%d vote%d] ", rf.me, rf.currentTerm, rf.leaderID, rf.voteFor) + "\u001B[0m" + format
-	DPrintf(format, a...)
 }
 
 // return currentTerm and whether this server
