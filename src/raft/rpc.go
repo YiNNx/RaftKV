@@ -109,7 +109,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		leaderEndLog := args.Entries[len(args.Entries)-1]
 		leaderStartLog := args.Entries[0]
 		endLog := rf.logs.getEntry(leaderEndLog.Index)
-		rf.DPrintf("append logs: %+v", args.Entries)
+		rf.DPrintf("append logs: %d to %d", leaderStartLog.Index, leaderEndLog.Index)
 		if endLog == nil || endLog.Term != leaderEndLog.Term {
 			rf.logs.removeTail(leaderStartLog.Index)
 			rf.logs.appendEntries(args.Entries)
