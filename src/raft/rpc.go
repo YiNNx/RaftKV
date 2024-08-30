@@ -3,8 +3,9 @@ package raft
 func (rf *Raft) checkReqTerm(term int) (bool, *int) {
 	rf.stateMu.RLock()
 	defer rf.stateMu.RUnlock()
-	if term < rf.currentTerm {
-		return false, &rf.currentTerm
+	curTerm := rf.currentTerm
+	if term < curTerm {
+		return false, &curTerm
 	}
 	return true, nil
 }
