@@ -33,6 +33,7 @@ func (l *EntryList) String() string {
 	for _, log := range l.Logs {
 		res += log.String()
 	}
+	res += fmt.Sprintf(" prev [%d(%d)]", l.PrevIndex, l.PrevTerm)
 	return res
 }
 
@@ -54,8 +55,12 @@ func (l *EntryList) getLastTerm() int {
 	return l.PrevTerm
 }
 
-func (l *EntryList) getSlice(start int, end int) []Entry {
-	return l.Logs[l.getRawIndex(start):l.getRawIndex(end+1)]
+func (l *EntryList) getTail(start int) []Entry {
+	start = l.getRawIndex(start)
+	if start < 0 {
+		return []Entry{}
+	}
+	return l.Logs[start:]
 }
 
 func (l *EntryList) getEntry(index int) *Entry {
@@ -73,21 +78,28 @@ func (l *EntryList) getEntry(index int) *Entry {
 }
 
 func (l *EntryList) tryCutPrefix(prefixEnd int) {
-	if l.getRawIndex(prefixEnd) < 0 {
+	rawEnd := l.getRawIndex(prefixEnd)
+	if rawEnd < 0 {
 		return
 	}
-
-	prevLog := l.getEntry(prefixEnd)
-	l.Logs = l.Logs[l.getRawIndex(prefixEnd)+1:]
+	if rawEnd > len(l.Logs)-1 {
+		rawEnd = len(l.Logs) - 1
+	}
+	prevLog := l.Logs[rawEnd]
+	l.Logs = l.Logs[rawEnd+1:]
 	l.PrevIndex = prevLog.Index
 	l.PrevTerm = prevLog.Term
 }
 
 func (l *EntryList) tryCutSuffix(suffixStart int) {
-	if l.getRawIndex(suffixStart) < 0 || l.getRawIndex(suffixStart) >= len(l.Logs) {
+	rawStart := l.getRawIndex(suffixStart)
+	if rawStart >= len(l.Logs) {
 		return
 	}
-	l.Logs = l.Logs[:l.getRawIndex(suffixStart)]
+	if rawStart < 0 {
+		rawStart = 0
+	}
+	l.Logs = l.Logs[:rawStart]
 }
 
 func (l *EntryList) append(command interface{}, term int) int {

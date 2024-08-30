@@ -84,8 +84,8 @@ func (rf *Raft) getLastApplied() int {
 	return int(atomic.LoadInt64(&rf.lastApplied))
 }
 
-func (rf *Raft) incrLastApplied() {
-	atomic.AddInt64(&rf.lastApplied, 1)
+func (rf *Raft) setLastApplied(n int) {
+	atomic.StoreInt64(&rf.lastApplied, int64(n))
 }
 
 // >=
@@ -114,9 +114,8 @@ func (rf *Raft) persist() {
 	e.Encode(rf.currentTerm)
 	e.Encode(rf.voteFor)
 	e.Encode(rf.logs)
-	e.Encode(rf.snapshot)
 	raftstate := w.Bytes()
-	rf.persister.Save(raftstate, nil)
+	rf.persister.Save(raftstate, rf.snapshot)
 }
 
 // restore previously persisted state.
@@ -130,14 +129,14 @@ func (rf *Raft) readPersist(data []byte) {
 	var voteFor int
 	var logs EntryList
 	var snapshot []byte
-	if d.Decode(&currentTerm) != nil || d.Decode(&voteFor) != nil || d.Decode(&logs) != nil || d.Decode(&snapshot) != nil {
-		panic("failed to decode")
-	} else {
-		rf.currentTerm = currentTerm
-		rf.voteFor = voteFor
-		rf.logs = logs
-		rf.snapshot = snapshot
-	}
+	d.Decode(&currentTerm)
+	d.Decode(&voteFor)
+	d.Decode(&logs)
+	d.Decode(&snapshot)
+	rf.currentTerm = currentTerm
+	rf.voteFor = voteFor
+	rf.logs = logs
+	rf.snapshot = snapshot
 }
 
 // the service says it has created a snapshot that has
@@ -145,18 +144,11 @@ func (rf *Raft) readPersist(data []byte) {
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	rf.HighLightf("try acquire lock!")
-
 	rf.logMu.Lock()
-
-	defer rf.logMu.Unlock()
-
-	rf.HighLightf("acquired!")
-
-	rf.Debugf("now snapshot til index %d", index)
 	rf.snapshot = snapshot
 	rf.logs.tryCutPrefix(index)
-	rf.Debugf("logs: %s", &rf.logs)
+	rf.logMu.Unlock()
+	rf.HighLightf("SNAPSHOT %d(%d)", rf.logs.PrevIndex, rf.logs.PrevTerm)
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -188,7 +180,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = index
 	isLeader := true
 
-	rf.HighLightf("START COMMAND %s", rf.logs.getEntry(index))
+	rf.Debugf("START COMMAND %s", rf.logs.getEntry(index))
 	rf.appendTrigger <- AllPeers
 
 	return index, term, isLeader
@@ -230,7 +222,6 @@ func (rf *Raft) killed() bool {
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := NewRaftInstance(peers, me, persister, applyCh)
-
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
@@ -259,23 +250,31 @@ func (rf *Raft) apply() {
 	for {
 		select {
 		case <-rf.applyTicker.C:
-			go func() {
+			func() {
 				rf.logMu.RLock()
 				defer rf.logMu.RUnlock()
-				for rf.getLastApplied() < rf.commitIndex {
-					rf.incrLastApplied()
-					entry := rf.logs.getEntry(rf.getLastApplied())
-					rf.Debugf("apply entry %s", entry)
-					rf.applyCh <- ApplyMsg{
-						CommandValid:  true,
-						Command:       entry.Command,
-						CommandIndex:  entry.Index,
-						SnapshotValid: false,
-						Snapshot:      []byte{},
-						SnapshotTerm:  0,
-						SnapshotIndex: 0,
+
+				lastApplied := rf.getLastApplied()
+				if rf.commitIndex == lastApplied {
+					return
+				}
+				msgList := make([]ApplyMsg, rf.commitIndex-lastApplied)
+				rf.Debugf("apply entry %d - %d", lastApplied+1, rf.commitIndex)
+				for i := range msgList {
+					entry := rf.logs.getEntry(rf.getLastApplied() + i + 1)
+					msgList[i] = ApplyMsg{
+						CommandValid: true,
+						Command:      entry.Command,
+						CommandIndex: entry.Index,
 					}
 				}
+				rf.setLastApplied(rf.commitIndex)
+
+				go func() {
+					for _, msg := range msgList {
+						rf.applyCh <- msg
+					}
+				}()
 			}()
 		}
 	}

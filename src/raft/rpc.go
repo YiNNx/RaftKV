@@ -154,11 +154,36 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	if args.LeaderID != rf.leaderID {
 		rf.updateLeader(args.LeaderID)
 	}
+	reply.Term = rf.currentTerm
 
 	rf.logMu.Lock()
-
 	defer rf.logMu.Unlock()
 
+	if rf.getLastApplied() > args.LastIncludedIndex {
+		return
+	}
+
+	rf.snapshot = args.Snapshot
+	go func() {
+		rf.HighLightf("apply snapshot %d[%d]", args.LastIncludedIndex, args.LastIncludedTerm)
+		rf.applyCh <- ApplyMsg{
+			SnapshotValid: true,
+			Snapshot:      args.Snapshot,
+			SnapshotTerm:  args.LastIncludedTerm,
+			SnapshotIndex: args.LastIncludedIndex,
+		}
+	}()
+
+	rf.logs.tryCutPrefix(args.LastIncludedIndex)
+
+	if rf.logs.PrevIndex == args.LastIncludedIndex && rf.logs.PrevTerm == args.LastIncludedTerm {
+		return
+	}
+	rf.logs.Logs = []Entry{}
+	rf.logs.PrevIndex = args.LastIncludedIndex
+	rf.logs.PrevTerm = args.LastIncludedTerm
+	rf.commitIndex = args.LastIncludedIndex
+	rf.setLastApplied(args.LastIncludedIndex)
 }
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {

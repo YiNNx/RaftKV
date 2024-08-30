@@ -32,7 +32,7 @@ func (rf *Raft) Debugf(format string, a ...interface{}) {
 	if !Debug {
 		return
 	}
-	prefix := fmt.Sprintf("[%d][term%d ld%d commit%d]", rf.me, rf.currentTerm, rf.leaderID, rf.commitIndex)
+	prefix := fmt.Sprintf("[%d][term %d prev %d applied %d commit %d]", rf.me, rf.currentTerm, rf.logs.PrevIndex, rf.lastApplied, rf.commitIndex)
 	if Colored {
 		prefix = colors[rf.me] + prefix + "\033[39;49m"
 		if rf.leaderID == rf.me {
