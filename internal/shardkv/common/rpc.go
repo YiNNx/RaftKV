@@ -35,12 +35,3 @@ type PullReply struct {
 	Storage map[string]string
 	Err     Err
 }
-
-type LeaveArgs struct {
-	ConfigVersion int
-	ShardId       int
-}
-
-type LeaveReply struct {
-	Err Err
-}

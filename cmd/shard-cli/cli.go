@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
-	"raftkv/internal/shardkv/client"
+	"raftkv/internal/shardctl/client"
 	"raftkv/pkg/rpc"
 )
 
@@ -32,24 +33,31 @@ func NewCli(addrList []string) *Cli {
 	}
 }
 
-func (cli *Cli) HandleCommand(command string, args []string) (output string, err error) {
+func (cli *Cli) HandleCommand(command string, args []string) (output interface{}, err error) {
 	switch command {
-	case "GET":
+	case "QUERY":
+		if len(args) != 0 {
+			return "", ErrInvalidFormat
+		}
+		output = cli.clerk.Query(-1)
+	case "JOIN":
+		if len(args) != 2 {
+			return "", ErrInvalidFormat
+		}
+		gid, err := strconv.Atoi(args[0])
+		if err != nil {
+			return "", ErrInvalidFormat
+		}
+		cli.clerk.Join(map[int][]string{gid: strings.Split(args[1], ",")})
+	case "LEAVE":
 		if len(args) != 1 {
 			return "", ErrInvalidFormat
 		}
-		output = cli.clerk.Get(args[0])
-	case "PUT":
-		if len(args) != 2 {
+		num, err := strconv.Atoi(args[0])
+		if err != nil {
 			return "", ErrInvalidFormat
 		}
-		cli.clerk.Put(args[0], args[1])
-		output = "ok"
-	case "APPEND":
-		if len(args) != 2 {
-			return "", ErrInvalidFormat
-		}
-		cli.clerk.Append(args[0], args[1])
+		cli.clerk.Leave([]int{num})
 		output = "ok"
 	case "EXIT":
 		return "", io.EOF
@@ -62,7 +70,7 @@ func (cli *Cli) HandleCommand(command string, args []string) (output string, err
 func (cli *Cli) Run() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("raftkv cli > ")
+		fmt.Print("shardctl cli > ")
 		text, _ := reader.ReadString('\n')
 		fields := strings.Fields(text)
 		command := strings.ToUpper(fields[0])
@@ -80,7 +88,7 @@ func (cli *Cli) Run() {
 }
 
 func main() {
-	addr := flag.String("addr", "", "kv server address list, split by ',' ")
+	addr := flag.String("ctrlers", "", "ctrlers address list, split by ',' ")
 	flag.Parse()
 	if len(*addr) == 0 {
 		fmt.Print("arg -addr missing\n")

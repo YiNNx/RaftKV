@@ -5,6 +5,7 @@ package client
 //
 
 import (
+	"encoding/gob"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,15 @@ type Clerk struct {
 }
 
 func MakeClerk(servers []*rpc.ClientEnd) *Clerk {
+	gob.Register(common.JoinArgs{})
+	gob.Register(common.JoinReply{})
+	gob.Register(common.LeaveArgs{})
+	gob.Register(common.LeaveReply{})
+	gob.Register(common.MoveArgs{})
+	gob.Register(common.MoveReply{})
+	gob.Register(common.QueryArgs{})
+	gob.Register(common.QueryReply{})
+
 	ck := new(Clerk)
 	ck.servers = servers
 	ck.clientID = uuid.NewString()
