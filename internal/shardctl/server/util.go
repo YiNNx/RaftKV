@@ -8,7 +8,7 @@ import (
 
 // note: the debug printf will cause data race
 // but it's ok cause it's used for *debug* :)
-func (kv *ShardKV) Debugf(format string, a ...interface{}) {
+func (kv *ShardCtrler) Debugf(format string, a ...interface{}) {
 	if !util.Debug {
 		return
 	}
@@ -18,7 +18,7 @@ func (kv *ShardKV) Debugf(format string, a ...interface{}) {
 	util.DPrintf(format, a...)
 }
 
-func (kv *ShardKV) HighLightf(format string, a ...interface{}) {
+func (kv *ShardCtrler) HighLightf(format string, a ...interface{}) {
 	format = util.LogHight[kv.me] + format + "\033[39;49m"
 	kv.Debugf(format, a...)
 }

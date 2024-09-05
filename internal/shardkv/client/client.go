@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/gob"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +12,7 @@ import (
 	shardctl_client "raftkv/internal/shardctl/client"
 	shardctl_common "raftkv/internal/shardctl/common"
 	"raftkv/internal/shardkv/common"
+	"raftkv/internal/shardkv/server"
 	"raftkv/internal/shardkv/util"
 	"raftkv/pkg/rpc"
 )
@@ -27,10 +29,14 @@ type Clerk struct {
 }
 
 func MakeClerk(ctrlers []*rpc.ClientEnd) *Clerk {
-	gob.Register(common.Op{})
+	gob.Register(server.Op{})
 	gob.Register(common.PutAppendArgs{})
+	gob.Register(common.PutAppendReply{})
 	gob.Register(common.GetArgs{})
 	gob.Register(common.GetReply{})
+	gob.Register(common.PullArgs{})
+	gob.Register(common.PullReply{})
+	gob.Register(shardctl_common.Config{})
 
 	ck := new(Clerk)
 	ck.sm = shardctl_client.MakeClerk(ctrlers)
@@ -75,6 +81,7 @@ func (ck *Clerk) Get(key string) string {
 				ok := srv.Call("ShardKV.Get", &args, &reply)
 				util.DPrintf("clerk res %+v %+v", ok, reply)
 				if ok && (reply.Err == common.OK || reply.Err == common.ErrNoKey) {
+					fmt.Printf("[srv %d-%d] ", gid, si)
 					atomic.StoreUint64(&ck.cacheLeader, si)
 					return reply.Value
 				}
@@ -112,6 +119,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 				ok := srv.Call("ShardKV.PutAppend", &args, &reply)
 				util.DPrintf("clerk res %+v", reply)
 				if ok && reply.Err == common.OK {
+					fmt.Printf("[srv %d-%d] ", gid, si)
 					return
 				}
 				if ok && reply.Err == common.ErrWrongGroup {

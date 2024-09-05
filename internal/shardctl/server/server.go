@@ -3,8 +3,6 @@ package server
 import (
 	"context"
 	"encoding/gob"
-	"fmt"
-	"log"
 	"strconv"
 	"sync"
 	"time"
@@ -26,7 +24,6 @@ type ShardCtrler struct {
 	applyCh      chan raft.ApplyMsg
 	notifier     *sync.Map //map[string]chan interface{}
 	duplicatedOp *sync.Map
-	// Your data here.
 
 	repo repo.ConfigRepositery
 }
@@ -47,27 +44,31 @@ type Op struct {
 	Args     interface{}
 }
 
-func (sc *ShardCtrler) Join(args *common.JoinArgs, reply *common.JoinReply) {
+func (sc *ShardCtrler) Join(args *common.JoinArgs, reply *common.JoinReply) error {
 	_, err := sc.WaitTilApply(args.OpID, args.ClientID, OpJoin, args.Servers)
 	reply.Err = err
+	return nil
 }
 
-func (sc *ShardCtrler) Leave(args *common.LeaveArgs, reply *common.LeaveReply) {
+func (sc *ShardCtrler) Leave(args *common.LeaveArgs, reply *common.LeaveReply) error {
 	_, err := sc.WaitTilApply(args.OpID, args.ClientID, OpLeave, args.GIDs)
 	reply.Err = err
+	return nil
 }
 
-func (sc *ShardCtrler) Move(args *common.MoveArgs, reply *common.MoveReply) {
+func (sc *ShardCtrler) Move(args *common.MoveArgs, reply *common.MoveReply) error {
 	_, err := sc.WaitTilApply(args.OpID, args.ClientID, OpMove, []int{args.Shard, args.GID})
 	reply.Err = err
+	return nil
 }
 
-func (sc *ShardCtrler) Query(args *common.QueryArgs, reply *common.QueryReply) {
+func (sc *ShardCtrler) Query(args *common.QueryArgs, reply *common.QueryReply) error {
 	res, err := sc.WaitTilApply(args.OpID, args.ClientID, OpQuery, args.Num)
 	reply.Err = err
 	if err == common.OK {
 		reply.Config = res.(common.Config)
 	}
+	return nil
 }
 
 func (sc *ShardCtrler) WaitTilApply(opID int64, clientID string, opType OpType, args interface{}) (interface{}, common.Err) {
@@ -197,6 +198,14 @@ func StartServer(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int, pe
 	gob.Register(Op{})
 	gob.Register(common.Config{})
 	gob.Register(map[int][]string{})
+	gob.Register(common.JoinArgs{})
+	gob.Register(common.JoinReply{})
+	gob.Register(common.LeaveArgs{})
+	gob.Register(common.LeaveReply{})
+	gob.Register(common.MoveArgs{})
+	gob.Register(common.MoveReply{})
+	gob.Register(common.QueryArgs{})
+	gob.Register(common.QueryReply{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	applyCh := make(chan raft.ApplyMsg)
@@ -216,50 +225,4 @@ func StartServer(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int, pe
 	go sc.ListenApply()
 	go sc.NoOpTicker()
 	return sc
-}
-
-const Debug = true
-
-func DPrintf(format string, a ...interface{}) {
-	if Debug {
-		log.Printf(format, a...)
-	}
-}
-
-func Highlightf1(format string, a ...interface{}) {
-	format = "\033[38;5;2m" + format + "\033[39;49m"
-	DPrintf(format, a...)
-}
-
-func Highlightf2(format string, a ...interface{}) {
-	format = "\033[38;5;6m" + format + "\033[39;49m"
-	DPrintf(format, a...)
-}
-
-var colors = []string{
-	"\033[38;5;2m",
-	"\033[38;5;45m",
-	"\033[38;5;6m",
-	"\033[38;5;3m",
-	"\033[38;5;204m",
-	"\033[38;5;111m",
-	"\033[38;5;184m",
-	"\033[38;5;69m",
-}
-
-// note: the debug printf will cause data race
-// but it's ok cause it's used for *debug* :)
-func (sc *ShardCtrler) Debugf(format string, a ...interface{}) {
-	if !Debug {
-		return
-	}
-	prefix := fmt.Sprintf("[%d][kv]", sc.me)
-	prefix = colors[sc.me] + prefix + "\033[39;49m"
-	format = prefix + " " + format
-	DPrintf(format, a...)
-}
-
-func (sc *ShardCtrler) HighLightf(format string, a ...interface{}) {
-	format = colors[sc.me] + format + "\033[39;49m"
-	sc.Debugf(format, a...)
 }
