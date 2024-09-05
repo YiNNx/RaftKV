@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"raftkv/internal/common"
 	"raftkv/internal/raft"
-	"raftkv/internal/repository"
+	"raftkv/internal/shardkv/common"
+	"raftkv/internal/shardkv/repository"
 	"raftkv/pkg/persister"
 	"raftkv/pkg/rpc"
 )

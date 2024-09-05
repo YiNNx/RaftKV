@@ -1,20 +1,13 @@
 [cluster]
 
-[[cluster.nodes]]
-id = 0
-host = "127.0.0.1"
-port = ":8080"
+[[cluster.group]]
+addr_list = [":8081", ":8082", ":8083"]
 
 [[cluster.nodes]]
-id = 1
-host = "127.0.0.1"
-port = ":8081"
+addr_list = [":8084", ":8085", ":8086"]
 
 [[cluster.nodes]]
-id = 2
-host = "127.0.0.1"
-port = ":8082"
-
+addr_list = [":8087", ":8088", ":8089"]
 
 [persister]
 state = "/tmp/kvraft/state"

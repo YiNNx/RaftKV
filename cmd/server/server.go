@@ -4,47 +4,40 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"strings"
 
-	"github.com/BurntSushi/toml"
-
-	"raftkv/internal/common"
-	"raftkv/internal/server"
+	"raftkv/internal/shardkv/server"
 	"raftkv/pkg/persister"
 	"raftkv/pkg/rpc"
 )
 
-func StartServer(id int, nodes []common.Node, restart bool, persisterConf common.Persister) error {
-	var port string
+func StartServer(id int, nodes []string, restart bool) error {
+	var me string
 	rpcEnds := make(map[int]*rpc.ClientEnd, len(nodes))
-	for _, node := range nodes {
-		rpcEnds[node.ID] = rpc.MakeClientEnd(node.Host + node.Port)
-		if node.ID == id {
-			port = node.Port
+	for nodeID, node := range nodes {
+		rpcEnds[nodeID] = rpc.MakeClientEnd(node)
+		if nodeID == id {
+			me = node
 		}
 	}
-	if len(port) == 0 {
+	if len(me) == 0 {
 		return errors.New("invalid node id")
 	}
-	rpcServer := rpc.NewServer(port)
+	rpcServer := rpc.NewServer(me)
 	server.StartKVServer(
 		rpcServer,
 		rpcEnds,
 		id,
-		persister.MakePersister(id, restart, persisterConf.State, persisterConf.Snapshot),
+		persister.MakePersister(id, restart, "/tmp/kvraft/state", "/tmp/kvraft/snapshot"),
 	)
 	return rpcServer.Run()
 }
 
 func main() {
 	id := flag.Int("id", -1, "specify current node id in cluster config")
+	nodes := flag.String("nodes", "", "node address list")
 	restart := flag.Bool("recover", false, "recover from last crash")
-	configPath := flag.String("c", "config.toml", "config file")
 	flag.Parse()
-	var config common.Config
-	if _, err := toml.DecodeFile(*configPath, &config); err != nil {
-		log.Fatal(err)
-	}
-	log.Print("[config] ", config)
 
-	log.Fatal(StartServer(*id, config.Cluster.Nodes, *restart, config.Persister))
+	log.Fatal(StartServer(*id, strings.Split(*nodes, ","), *restart))
 }
