@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"raftkv/internal/client"
+	"raftkv/internal/shardkv/client"
 	"raftkv/pkg/rpc"
 )
 
