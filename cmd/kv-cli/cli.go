@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"raftkv/internal/shardkv/client"
+	"raftkv/internal/kvraft"
 	"raftkv/pkg/rpc"
 )
 
@@ -19,7 +19,7 @@ var (
 )
 
 type Cli struct {
-	clerk *client.Clerk
+	clerk *kvraft.Clerk
 }
 
 func NewCli(addrList []string) *Cli {
@@ -28,7 +28,7 @@ func NewCli(addrList []string) *Cli {
 		rpcEnds[i] = rpc.MakeClientEnd(addr)
 	}
 	return &Cli{
-		clerk: client.MakeClerk(rpcEnds),
+		clerk: kvraft.MakeClerk(rpcEnds),
 	}
 }
 
@@ -80,7 +80,7 @@ func (cli *Cli) Run() {
 }
 
 func main() {
-	addr := flag.String("ctrlers", "", "ctrlers address list, split by ',' ")
+	addr := flag.String("nodes", "", "nodes address list, split by ',' ")
 	flag.Parse()
 	if len(*addr) == 0 {
 		fmt.Print("arg -addr missing\n")
