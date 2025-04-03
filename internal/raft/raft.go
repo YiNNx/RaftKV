@@ -96,6 +96,13 @@ func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
+	gob.Register(&RequestVoteArgs{})
+	gob.Register(&RequestVoteReply{})
+	gob.Register(&AppendEntriesArgs{})
+	gob.Register(&AppendEntriesReply{})
+	gob.Register(&InstallSnapshotArgs{})
+	gob.Register(&InstallSnapshotReply{})
+
 	if len(rf.snapshot) != 0 {
 		go func() {
 			rf.applyCh <- ApplyMsg{
@@ -113,7 +120,7 @@ func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int,
 	go rf.ticker()
 	go rf.apply()
 
-	rpcServer.Register(rf)
+	_ = rpcServer.Register(rf)
 	rf.HighLightf("START")
 	return rf
 }
@@ -166,13 +173,6 @@ func (rf *Raft) apply() {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	gob.Register(&RequestVoteArgs{})
-	gob.Register(&RequestVoteReply{})
-	gob.Register(&AppendEntriesArgs{})
-	gob.Register(&AppendEntriesReply{})
-	gob.Register(&InstallSnapshotArgs{})
-	gob.Register(&InstallSnapshotReply{})
-
 	rf.stateMu.Lock()
 	defer rf.stateMu.Unlock()
 

@@ -103,7 +103,7 @@ func (kv *KVServer) ListenApply() {
 				op := msg.Command.(Op)
 
 				var notifyCh chan OpRes
-				if val, ok := kv.notifier.Load(op.OpID); ok {
+				if val, ok := kv.notifier.LoadAndDelete(op.OpID); ok {
 					notifyCh = val.(chan OpRes)
 				}
 

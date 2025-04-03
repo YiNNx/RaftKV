@@ -60,7 +60,7 @@ func (rf *Raft) runCandidate() {
 	voteRespChan := make(chan VoteRes, len(rf.peers)-1)
 	voteGrantedNum := 1
 
-	for rf.killed() == false {
+	for !rf.killed() {
 		select {
 		case <-candidateState.Done():
 			return
