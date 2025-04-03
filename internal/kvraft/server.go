@@ -47,6 +47,46 @@ func (kv *KVServer) Append(req *Request, res *Response) error {
 	return nil
 }
 
+// BeginTransaction starts a new transaction
+func (kv *KVServer) BeginTransaction(req *Request, res *Response) error {
+	opRes := kv.WaitTilApply(req.OpID, OpBeginTransaction, nil)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return nil
+}
+
+// TxnGet gets a value within a transaction
+func (kv *KVServer) TxnGet(req *Request, res *Response) error {
+	opRes := kv.WaitTilApply(req.OpID, OpTxnGet, req.Args)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return nil
+}
+
+// TxnPut puts a value within a transaction
+func (kv *KVServer) TxnPut(req *Request, res *Response) error {
+	opRes := kv.WaitTilApply(req.OpID, OpTxnPut, req.Args)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return nil
+}
+
+// CommitTransaction commits a transaction
+func (kv *KVServer) CommitTransaction(req *Request, res *Response) error {
+	opRes := kv.WaitTilApply(req.OpID, OpCommitTransaction, req.Args)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return nil
+}
+
+// AbortTransaction aborts a transaction
+func (kv *KVServer) AbortTransaction(req *Request, res *Response) error {
+	opRes := kv.WaitTilApply(req.OpID, OpAbortTransaction, req.Args)
+	res.Reply = opRes.Reply
+	res.Err = opRes.Err
+	return nil
+}
+
 func (kv *KVServer) WaitTilApply(opID string, opType OpType, args interface{}) OpRes {
 	op := NewOp(opID, opType, args)
 	resCh, err := func(op Op) (chan OpRes, Err) {
@@ -144,6 +184,42 @@ func (kv *KVServer) Execute(op Op) OpRes {
 		val := op.Args.(PutAppendArgs).Value
 		kv.repo.Append(key, val)
 		return NewOpRes(OK, nil)
+	case OpBeginTransaction:
+		// Create a new transaction
+		txnID := kv.repo.txnManager.CreateTransaction()
+		return NewOpRes(OK, TransactionReply{TxnID: txnID})
+	case OpTxnGet:
+		// Get a value within a transaction
+		args := op.Args.(TransactionArgs)
+		val, err := kv.repo.TxnGet(args.TxnID, args.Key)
+		if err != OK {
+			return NewOpRes(err, nil)
+		}
+		return NewOpRes(OK, TransactionReply{Value: val})
+	case OpTxnPut:
+		// Put a value within a transaction
+		args := op.Args.(TransactionArgs)
+		err := kv.repo.TxnPut(args.TxnID, args.Key, args.Value)
+		if err != OK {
+			return NewOpRes(err, nil)
+		}
+		return NewOpRes(OK, nil)
+	case OpCommitTransaction:
+		// Commit a transaction
+		args := op.Args.(CommitArgs)
+		err := kv.repo.TxnCommit(args.TxnID)
+		if err != OK {
+			return NewOpRes(err, CommitReply{Success: false})
+		}
+		return NewOpRes(OK, CommitReply{Success: true})
+	case OpAbortTransaction:
+		// Abort a transaction
+		args := op.Args.(AbortArgs)
+		err := kv.repo.TxnAbort(args.TxnID)
+		if err != OK {
+			return NewOpRes(err, AbortReply{Success: false})
+		}
+		return NewOpRes(OK, AbortReply{Success: true})
 	}
 	return NewOpRes("invalid op", nil)
 }
@@ -191,6 +267,12 @@ func StartKVServer(rpcServer *rpc.Server, servers map[int]*rpc.ClientEnd, me int
 	gob.Register(PutAppendArgs{})
 	gob.Register(GetArgs{})
 	gob.Register(GetReply{})
+	gob.Register(TransactionArgs{})
+	gob.Register(TransactionReply{})
+	gob.Register(CommitArgs{})
+	gob.Register(CommitReply{})
+	gob.Register(AbortArgs{})
+	gob.Register(AbortReply{})
 
 	applyCh := make(chan raft.ApplyMsg)
 	kv := &KVServer{

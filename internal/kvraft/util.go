@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-const Debug = false
+const Debug = true
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
@@ -54,9 +54,14 @@ func (kv *KVServer) HighLightf(format string, a ...interface{}) {
 type OpType string
 
 const (
-	OpGet    OpType = "Get"
-	OpPut    OpType = "Put"
-	OpAppend OpType = "Append"
+	OpGet              OpType = "Get"
+	OpPut              OpType = "Put"
+	OpAppend           OpType = "Append"
+	OpBeginTransaction OpType = "BeginTransaction"
+	OpTxnGet           OpType = "TxnGet"
+	OpTxnPut           OpType = "TxnPut"
+	OpCommitTransaction OpType = "CommitTransaction"
+	OpAbortTransaction  OpType = "AbortTransaction"
 )
 
 type Op struct {
