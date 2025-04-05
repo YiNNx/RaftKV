@@ -33,7 +33,7 @@ func MakePersister(id int, restart bool, raftStatePath string, snapshotPath stri
 	if err != nil {
 		log.Fatal(err)
 	}
-	os.MkdirAll(snapshotPath, 0755)
+	_ = os.MkdirAll(snapshotPath, 0755)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,15 +49,13 @@ func MakePersister(id int, restart bool, raftStatePath string, snapshotPath stri
 	return ps
 }
 
-func clone(orig []byte) []byte {
-	x := make([]byte, len(orig))
-	copy(x, orig)
-	return x
-}
-
 func (ps *Persister) ReadRaftState() []byte {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+
+	if ps.raftstate != nil {
+		return ps.raftstate
+	}
 
 	file, err := os.OpenFile(ps.raftStatePath, os.O_RDONLY|os.O_CREATE, 0755)
 	if err != nil {
@@ -106,11 +104,17 @@ func (ps *Persister) Save(raftstate []byte, snapshot []byte) {
 		fmt.Println("Error writing to file:", err)
 		return
 	}
+	ps.raftstate = raftstate
+	ps.snapshot = snapshot
 }
 
 func (ps *Persister) ReadSnapshot() []byte {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+
+	if ps.snapshot != nil {
+		return ps.snapshot
+	}
 
 	file, err := os.OpenFile(ps.snapshotPath, os.O_RDONLY|os.O_CREATE, 0755)
 	if err != nil {
@@ -126,4 +130,8 @@ func (ps *Persister) ReadSnapshot() []byte {
 		return nil
 	}
 	return buffer
+}
+
+func (ps *Persister) RaftStateSize() int {
+	return len(ps.ReadRaftState())
 }

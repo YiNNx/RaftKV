@@ -1,6 +1,7 @@
 package kvraft
 
 import (
+	"bytes"
 	"encoding/gob"
 	"sync"
 	"sync/atomic"
@@ -134,6 +135,9 @@ func (kv *KVServer) ListenApply() {
 		select {
 		case msg := <-kv.applyCh:
 			if msg.Command == nil {
+				if msg.SnapshotValid {
+					kv.readSnapshot(msg.Snapshot)
+				}
 				continue
 			}
 			func() {
@@ -155,9 +159,14 @@ func (kv *KVServer) ListenApply() {
 					return
 				}
 				res := kv.Execute(op)
-				// if _, isLeader := kv.rf.GetState(); isLeader {
-				// 	kv.Debugf("exec [%d] %s res", msg.CommandIndex, &op)
-				// }
+				if kv.rf.GetStateSize() >= kv.maxraftstate && kv.maxraftstate != -1 {
+					w := new(bytes.Buffer)
+					e := gob.NewEncoder(w)
+					if err := e.Encode(kv.repo.data); err != nil {
+						panic(err)
+					}
+					kv.rf.Snapshot(msg.CommandIndex, w.Bytes())
+				}
 				kv.duplicatedOp.Store(op.OpID, res)
 				if _, _, isLeader := kv.rf.GetState(); notifyCh != nil && isLeader {
 					kv.HighLightf("send %d res to client", msg.CommandIndex)
@@ -224,6 +233,17 @@ func (kv *KVServer) Execute(op Op) OpRes {
 	return NewOpRes("invalid op", nil)
 }
 
+func (kv *KVServer) readSnapshot(snapshot []byte) {
+	// var duplicatedOp map[string]any
+	var data map[string]map[string]string
+	r := bytes.NewBuffer(snapshot)
+	d := gob.NewDecoder(r)
+	if e := d.Decode(&data); e != nil {
+		data = make(map[string]map[string]string)
+	}
+	kv.repo.data = data
+}
+
 // func (kv *KVServer) Finish(args *FinishArgs, reply *FinishReply) {
 // 	kv.duplicatedOp.Delete(args.OpID)
 // }
@@ -285,6 +305,7 @@ func StartKVServer(rpcServer *rpc.Server, servers map[int]*rpc.ClientEnd, me int
 		repo:         NewKVRepositories(),
 		maxraftstate: -1,
 	}
+	kv.readSnapshot(persister.ReadSnapshot())
 	_ = rpcServer.Register(kv)
 
 	go kv.ListenApply()

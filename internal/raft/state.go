@@ -148,3 +148,7 @@ func (rf *Raft) isConfigChangeCommand(command interface{}) bool {
 	}
 	return false
 }
+
+func (rf *Raft) GetStateSize() int {
+	return rf.persister.RaftStateSize()
+}
