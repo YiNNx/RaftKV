@@ -8,7 +8,7 @@ import (
 )
 
 type ClientEnd struct {
-	addr string
+	Addr string
 }
 
 func MakeClientEnd(addr string) *ClientEnd {
@@ -16,7 +16,7 @@ func MakeClientEnd(addr string) *ClientEnd {
 }
 
 func (c *ClientEnd) Call(serviceMethod string, args any, reply any) bool {
-	client, err := rpc.DialHTTP("tcp", c.addr)
+	client, err := rpc.DialHTTP("tcp", c.Addr)
 	if err != nil {
 		return false
 	}

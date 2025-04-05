@@ -71,7 +71,7 @@ func (rf *Raft) setLastApplied(n int) {
 
 // >=
 func (rf *Raft) getPriorityNum() int {
-	return (len(rf.peers) + 1) / 2
+	return len(rf.peers)/2 + 1
 }
 
 // return currentTerm and whether this server
@@ -136,4 +136,15 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.logs.tryCutPrefix(index)
 	rf.HighLightf("SNAPSHOT %d(%d)", rf.logs.PrevIndex, rf.logs.PrevTerm)
 	rf.logMu.Unlock()
+}
+
+// 检查命令是否是配置变更命令
+func (rf *Raft) isConfigChangeCommand(command interface{}) bool {
+	if _, ok := command.(*ConfigChangeCommand); ok {
+		return true
+	}
+	if _, ok := command.(ConfigChangeCommand); ok {
+		return true
+	}
+	return false
 }

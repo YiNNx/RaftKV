@@ -96,12 +96,17 @@ func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	gob.Register(&RequestVoteArgs{})
-	gob.Register(&RequestVoteReply{})
-	gob.Register(&AppendEntriesArgs{})
-	gob.Register(&AppendEntriesReply{})
-	gob.Register(&InstallSnapshotArgs{})
-	gob.Register(&InstallSnapshotReply{})
+	gob.Register(RequestVoteArgs{})
+	gob.Register(RequestVoteReply{})
+	gob.Register(AppendEntriesArgs{})
+	gob.Register(AppendEntriesReply{})
+	gob.Register(InstallSnapshotArgs{})
+	gob.Register(InstallSnapshotReply{})
+	gob.Register(AddServerArgs{})
+	gob.Register(AddServerReply{})
+	gob.Register(RemoveServerArgs{})
+	gob.Register(RemoveServerReply{})
+	gob.Register(ConfigChangeCommand{})
 
 	if len(rf.snapshot) != 0 {
 		go func() {
@@ -152,7 +157,11 @@ func (rf *Raft) apply() {
 					rf.applyChMu.Lock()
 					defer rf.applyChMu.Unlock()
 					for _, msg := range msgList {
-						rf.applyCh <- msg
+						if rf.isConfigChangeCommand(msg.Command) {
+							rf.applyConfigChange(msg)
+						} else {
+							rf.applyCh <- msg
+						}
 					}
 				}()
 			}()
