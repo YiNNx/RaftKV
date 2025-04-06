@@ -1,4 +1,4 @@
-package kvraft
+package kvserver
 
 const (
 	OK                = "OK"

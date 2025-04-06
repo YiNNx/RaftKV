@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"raftkv/internal/kvraft"
+	"raftkv/internal/kvserver"
 	"raftkv/pkg/rpc"
 )
 
@@ -19,7 +19,7 @@ var (
 )
 
 type Cli struct {
-	clerk *kvraft.Clerk
+	clerk *kvserver.Clerk
 }
 
 func NewCli(addrList []string) *Cli {
@@ -28,7 +28,7 @@ func NewCli(addrList []string) *Cli {
 		rpcEnds[i] = rpc.MakeClientEnd(addr)
 	}
 	return &Cli{
-		clerk: kvraft.MakeClerk(rpcEnds),
+		clerk: kvserver.MakeClerk(rpcEnds),
 	}
 }
 

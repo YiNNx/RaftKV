@@ -6,7 +6,7 @@ import (
 	"log"
 	"strings"
 
-	"raftkv/internal/kvraft"
+	"raftkv/internal/kvserver"
 	"raftkv/pkg/persister"
 	"raftkv/pkg/rpc"
 )
@@ -24,7 +24,7 @@ func StartServers(id int, peerAddrs []string, restart bool) error {
 		return errors.New("invalid node id")
 	}
 	rpcServer := rpc.NewServer(me)
-	kvraft.StartKVServer(
+	kvserver.StartKVServer(
 		rpcServer,
 		peers,
 		id,

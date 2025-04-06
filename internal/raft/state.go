@@ -71,7 +71,7 @@ func (rf *Raft) setLastApplied(n int) {
 
 // >=
 func (rf *Raft) getPriorityNum() int {
-	return (len(rf.peers) + 1) / 2
+	return len(rf.peers)/2 + 1
 }
 
 // return currentTerm and whether this server
