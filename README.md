@@ -47,6 +47,50 @@ go run cmd/benchmark/benchmark.go -duration=60 -clients=10
 - 网络分区测试（集群分裂）
 - 节点故障恢复测试
 - 高负载压力测试
+- 节点频繁故障测试（模拟频繁宕机和恢复）
+
+### 频繁故障测试
+
+测试系统在节点频繁宕机和恢复的极端条件下的可靠性：
+
+```shell
+go run cmd/benchmark/benchmark.go -config=cmd/benchmark/config.json
+```
+
+在配置文件中启用 frequentFailure 场景：
+
+```json
+"frequentFailure": {
+  "enabled": true,
+  "startAfterSeconds": 5,
+  "durationSeconds": 30,
+  "failureCycleSeconds": 3,
+  "recoveryCycleSeconds": 2,
+  "nodeIndices": [1, 2, 3],
+  "failOneByOne": true
+}
+```
+
+### 可视化性能报告
+
+测试框架自动生成交互式的性能可视化报告，包括：
+
+- QPS趋势图
+- 延迟分布图
+- 操作类型分布图
+- 错误率趋势图
+
+所有图表整合在一个HTML页面中，方便直观地分析系统性能。
+
+```shell
+# 生成可视化报告
+go run cmd/benchmark/benchmark.go -duration=120 -test-name=my-benchmark
+
+# 查看报告
+# 打开 benchmark-results/my-benchmark/index.html
+```
+
+![性能报告示例](https://example.com/performance-report.png)
 
 ### 详细用法
 

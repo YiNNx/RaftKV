@@ -36,11 +36,23 @@ type HighLoadScenario struct {
 	ClientMultiplier  int  `json:"clientMultiplier"`
 }
 
+// 节点频繁故障场景配置
+type FrequentFailureScenario struct {
+	Enabled              bool  `json:"enabled"`
+	StartAfterSeconds    int   `json:"startAfterSeconds"`
+	DurationSeconds      int   `json:"durationSeconds"`
+	FailureCycleSeconds  int   `json:"failureCycleSeconds"`  // 故障周期（秒）
+	RecoveryCycleSeconds int   `json:"recoveryCycleSeconds"` // 恢复周期（秒）
+	NodeIndices          []int `json:"nodeIndices"`          // 要故障的节点索引列表
+	FailOneByOne         bool  `json:"failOneByOne"`         // 是否依次故障而非同时故障
+}
+
 // 测试场景配置
 type TestScenarios struct {
 	NetworkPartition NetworkPartitionScenario `json:"networkPartition"`
 	NodeFailure      NodeFailureScenario      `json:"nodeFailure"`
 	HighLoad         HighLoadScenario         `json:"highLoad"`
+	FrequentFailure  FrequentFailureScenario  `json:"frequentFailure"`
 }
 
 // 性能测试配置
@@ -84,6 +96,15 @@ func DefaultConfig() *Config {
 				StartAfterSeconds: 40,
 				DurationSeconds:   20,
 				ClientMultiplier:  5,
+			},
+			FrequentFailure: FrequentFailureScenario{
+				Enabled:              false,
+				StartAfterSeconds:    15,
+				DurationSeconds:      30,
+				FailureCycleSeconds:  3, // 3秒故障
+				RecoveryCycleSeconds: 2, // 2秒恢复
+				NodeIndices:          []int{1, 2, 3},
+				FailOneByOne:         true,
 			},
 		},
 		Cleanup: true,

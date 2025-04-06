@@ -9,7 +9,9 @@
 - 支持多种工作负载类型（读重、写重、混合、扫描）
 - 实时性能监控和报告
 - 模拟网络分区、节点故障等故障场景
+- 模拟节点频繁宕机和恢复场景
 - 可配置的测试参数
+- 生成可视化性能报告和图表
 
 ## 使用方法
 
@@ -52,6 +54,9 @@ go run cmd/benchmark/benchmark.go -mode=distributed -config=my-config.json -dura
 - `-workload`: 工作负载类型: read-heavy, write-heavy, mixed, scan (默认: "mixed")
 - `-clients`: 客户端数量 (默认: 10)
 - `-report-rate`: 性能报告间隔(秒) (默认: 5)
+- `-result-dir`: 性能测试结果保存目录 (默认: "benchmark-results")
+- `-test-name`: 测试名称，会作为结果子目录的名称 (默认: 自动生成时间戳名称)
+- `-visualization`: 是否生成可视化报告 (默认: true)
 
 ### 配置文件
 
@@ -84,6 +89,15 @@ go run cmd/benchmark/benchmark.go -mode=distributed -config=my-config.json -dura
       "startAfterSeconds": 40,
       "durationSeconds": 20,
       "clientMultiplier": 5
+    },
+    "frequentFailure": {
+      "enabled": false,
+      "startAfterSeconds": 15,
+      "durationSeconds": 30,
+      "failureCycleSeconds": 3,
+      "recoveryCycleSeconds": 2,
+      "nodeIndices": [1, 2, 3],
+      "failOneByOne": true
     }
   },
   "cleanup": true
@@ -122,6 +136,44 @@ go run cmd/benchmark/benchmark.go -mode=distributed -config=my-config.json -dura
 
 在测试过程中突然增加客户端数量，测试系统在高负载下的性能和稳定性。
 
+### 频繁节点故障
+
+模拟节点频繁宕机和恢复的情况，测试系统在极端条件下的可靠性和自愈能力。支持两种模式：
+
+1. **依次故障模式**：按照配置的节点列表顺序，依次使节点宕机和恢复
+2. **同时故障模式**：同时使所有指定节点宕机，然后同时恢复
+
+可配置参数包括：
+- 故障周期（秒）：节点处于宕机状态的持续时间
+- 恢复周期（秒）：节点处于恢复状态的持续时间
+- 测试持续时间（秒）：整个频繁故障测试的持续时间
+- 故障节点列表：需要参与测试的节点索引列表
+
+## 可视化性能报告
+
+测试框架支持生成可视化的性能报告，通过HTML和交互式图表直观展示系统性能。
+
+### 可视化特性
+
+- 查看QPS随时间的变化趋势
+- 查看延迟（平均，P50，P90，P99）随时间的变化
+- 查看操作类型分布及其随时间的变化
+- 查看错误率趋势图
+- 查看整体性能摘要
+
+### 访问报告
+
+每次测试完成后，会在指定的结果目录下生成报告：
+
+```
+benchmark-results/
+  └── raftkv-benchmark-20230424-153022/  # 测试时间戳作为目录名
+      ├── index.html           # 主报告页面（摘要信息）
+      └── performance_charts.html # 包含所有交互式图表的页面
+```
+
+在浏览器中打开 `index.html` 查看整体摘要信息，点击"查看交互式性能图表"链接可以查看详细的性能图表。
+
 ## 示例用法
 
 ### 基本性能测试
@@ -148,4 +200,18 @@ go run cmd/benchmark/benchmark.go -workload=write-heavy -clients=20
 
 ```shell
 go run cmd/benchmark/benchmark.go -config=partition-test.json
+```
+
+### 频繁故障测试
+
+创建一个配置文件，启用频繁故障场景，然后运行：
+
+```shell
+go run cmd/benchmark/benchmark.go -config=frequent-failure-test.json
+```
+
+### 自定义结果目录和测试名称
+
+```shell
+go run cmd/benchmark/benchmark.go -result-dir=/tmp/raftkv-results -test-name=high-load-test
 ``` 
