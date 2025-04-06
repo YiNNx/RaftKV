@@ -1,0 +1,49 @@
+{
+  "mode": "local",
+  "serverNodes": [
+    {
+      "id": 0,
+      "address": "localhost:8080"
+    },
+    {
+      "id": 1,
+      "address": "localhost:8081"
+    },
+    {
+      "id": 2,
+      "address": "localhost:8082"
+    },
+    {
+      "id": 3,
+      "address": "localhost:8083"
+    },
+    {
+      "id": 4,
+      "address": "localhost:8084"
+    }
+  ],
+  "clientNodes": [
+    "localhost"
+  ],
+  "scenarios": {
+    "networkPartition": {
+      "enabled": true,
+      "startAfterSeconds": 30,
+      "durationSeconds": 15,
+      "nodeIndices": [3, 4]
+    },
+    "nodeFailure": {
+      "enabled": false,
+      "startAfterSeconds": 20,
+      "durationSeconds": 10,
+      "nodeIndex": 2
+    },
+    "highLoad": {
+      "enabled": false,
+      "startAfterSeconds": 40,
+      "durationSeconds": 20,
+      "clientMultiplier": 5
+    }
+  },
+  "cleanup": true
+} 
