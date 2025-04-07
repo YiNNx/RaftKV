@@ -165,7 +165,6 @@ func (kv *KVServer) ListenApply() {
 					if err := e.Encode(kv.repo.data); err != nil {
 						panic(err)
 					}
-					DPrintf("SNAPSHOT!")
 					kv.rf.Snapshot(msg.CommandIndex, w.Bytes())
 				}
 				kv.duplicatedOp.Store(op.OpID, res)

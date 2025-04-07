@@ -64,6 +64,9 @@ func (repo *KVRepositery) Append(key string, val string) {
 	repo.dataMu.Lock()
 	defer repo.dataMu.Unlock()
 	
+	if _, ok := repo.data[DefaultCF]; !ok {
+		repo.data[DefaultCF] = make(map[string]string)
+	}
 	oldVal := repo.data[DefaultCF][key]
 	repo.data[DefaultCF][key] = oldVal + val
 }
