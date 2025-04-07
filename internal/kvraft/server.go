@@ -303,7 +303,7 @@ func StartKVServer(rpcServer *rpc.Server, servers map[int]*rpc.ClientEnd, me int
 		notifier:     new(sync.Map),
 		duplicatedOp: new(sync.Map),
 		repo:         NewKVRepositories(),
-		maxraftstate: 1000,
+		maxraftstate: 10000,
 	}
 	kv.readSnapshot(persister.ReadSnapshot())
 	_ = rpcServer.Register(kv)

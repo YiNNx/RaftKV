@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"raftkv/internal/kvraft"
@@ -62,40 +61,47 @@ type OpResult struct {
 
 // 性能统计结果
 type Results struct {
-	results   []OpResult
-	startTime time.Time
-	endTime   time.Time
-	opsCount  int32
-	readOps   int32
-	writeOps  int32
-	appendOps int32
-	errors    int32
+	mu            *sync.Mutex
+	results       []OpResult
+	startTime     time.Time
+	opsCount      int32
+	lastOpsCount  int32
+	laststartTime time.Time
+	readOps       int32
+	writeOps      int32
+	appendOps     int32
+	errors        int32
 }
 
 // 创建性能统计对象
 func NewResults() *Results {
 	return &Results{
-		results:   make([]OpResult, 0, 10000),
-		startTime: time.Now(),
+		mu:            new(sync.Mutex),
+		results:       make([]OpResult, 0, 10000),
+		startTime:     time.Now(),
+		laststartTime: time.Now(),
 	}
 }
 
 // 添加操作结果
 func (r *Results) AddResult(result OpResult) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.results = append(r.results, result)
-	atomic.AddInt32(&r.opsCount, 1)
+	r.opsCount++
 
 	switch result.Type {
 	case Get:
-		atomic.AddInt32(&r.readOps, 1)
+		r.readOps++
 	case Put:
-		atomic.AddInt32(&r.writeOps, 1)
+		r.writeOps++
 	case Append:
-		atomic.AddInt32(&r.appendOps, 1)
+		r.appendOps++
 	}
 
 	if result.Error != nil {
-		atomic.AddInt32(&r.errors, 1)
+		r.errors++
 	}
 }
 
@@ -103,6 +109,7 @@ func (r *Results) AddResult(result OpResult) {
 type Stats struct {
 	TotalOps         int
 	QPS              float64
+	CurrentQPS       float64
 	AvgLatency       float64
 	P50Latency       float64
 	P90Latency       float64
@@ -119,19 +126,14 @@ type Stats struct {
 
 // 获取性能统计数据
 func (r *Results) GetStats() Stats {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	now := time.Now()
-	r.endTime = now
 
 	if len(r.results) == 0 {
 		return Stats{}
 	}
-
-	// 计算总操作数
-	totalOps := int(r.opsCount)
-	readOps := int(r.readOps)
-	writeOps := int(r.writeOps)
-	appendOps := int(r.appendOps)
-	errors := int(r.errors)
 
 	// 按延迟排序用于计算百分位数
 	latencies := make([]float64, 0, len(r.results))
@@ -139,14 +141,14 @@ func (r *Results) GetStats() Stats {
 
 	for _, result := range r.results {
 		latency := result.EndTime.Sub(result.StartTime)
-		latencies = append(latencies, float64(latency.Milliseconds()))
+		latencies = append(latencies, float64(latency.Microseconds())/1000.0)
 		totalLatency += latency
 	}
 
 	sort.Float64s(latencies)
 
 	// 计算平均延迟和百分位数
-	avgLatency := float64(totalLatency.Milliseconds()) / float64(len(r.results))
+	avgLatency := float64(totalLatency.Microseconds()) / 1000.0 / float64(len(r.results))
 
 	p50Index := int(float64(len(latencies)) * 0.5)
 	p90Index := int(float64(len(latencies)) * 0.9)
@@ -157,36 +159,42 @@ func (r *Results) GetStats() Stats {
 	p99Latency := latencies[p99Index]
 
 	// 计算QPS（每秒查询次数）
-	durationSecs := now.Sub(r.startTime).Seconds()
-	qps := float64(totalOps) / durationSecs
+	qps := float64(r.opsCount) / now.Sub(r.startTime).Seconds()
+
+	// 计算总操作数
+	lastOpsCount := int(r.lastOpsCount)
+	laststartTime := r.laststartTime
+	r.lastOpsCount = int32(r.opsCount)
+	r.laststartTime = now
 
 	// 计算操作类型百分比
+	totalOps := int(r.opsCount)
 	readOpsPercent := 0.0
 	writeOpsPercent := 0.0
 	appendOpsPercent := 0.0
 	errorRate := 0.0
-
 	if totalOps > 0 {
-		readOpsPercent = float64(readOps) / float64(totalOps) * 100
-		writeOpsPercent = float64(writeOps) / float64(totalOps) * 100
-		appendOpsPercent = float64(appendOps) / float64(totalOps) * 100
-		errorRate = float64(errors) / float64(totalOps) * 100
+		readOpsPercent = float64(r.readOps) / float64(totalOps) * 100
+		writeOpsPercent = float64(r.writeOps) / float64(totalOps) * 100
+		appendOpsPercent = float64(r.appendOps) / float64(totalOps) * 100
+		errorRate = float64(r.errors) / float64(totalOps) * 100
 	}
 
 	return Stats{
 		TotalOps:         totalOps,
 		QPS:              qps,
+		CurrentQPS:       (float64(r.lastOpsCount) - float64(lastOpsCount)) / r.laststartTime.Sub(laststartTime).Seconds(),
 		AvgLatency:       avgLatency,
 		P50Latency:       p50Latency,
 		P90Latency:       p90Latency,
 		P99Latency:       p99Latency,
-		ReadOps:          readOps,
-		WriteOps:         writeOps,
-		AppendOps:        appendOps,
+		ReadOps:          int(r.readOps),
+		WriteOps:         int(r.writeOps),
+		AppendOps:        int(r.appendOps),
+		Errors:           int(r.errors),
 		ReadOpsPercent:   readOpsPercent,
 		WriteOpsPercent:  writeOpsPercent,
 		AppendOpsPercent: appendOpsPercent,
-		Errors:           errors,
 		ErrorRate:        errorRate,
 	}
 }
@@ -315,12 +323,9 @@ func (g *Generator) clientWorker(id int) {
 	// 为随机生成器使用不同的种子
 	localRand := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id)))
 
-	log.Printf("客户端 %d 已启动\n", id)
-
 	for {
 		select {
 		case <-g.stopChan:
-			log.Printf("客户端 %d 已停止\n", id)
 			return
 		default:
 			// 继续执行
@@ -353,7 +358,7 @@ func (g *Generator) clientWorker(id int) {
 			Error:     err,
 		}
 
-		g.results.AddResult(result)
+		go g.results.AddResult(result)
 
 		// 添加一些随机间隔，避免所有客户端同时发送请求
 		time.Sleep(time.Millisecond * time.Duration(10+localRand.Intn(10)))
@@ -367,6 +372,7 @@ func (g *Generator) Start() {
 		g.wg.Add(1)
 		go g.clientWorker(i)
 	}
+	log.Printf("已启动 %d 个客户端\n", g.clientCount)
 }
 
 // 停止负载生成

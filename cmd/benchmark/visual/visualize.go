@@ -94,8 +94,19 @@ func (v *Visualizer) GenerateCharts(stats []load.Stats, intervals []time.Time, p
 	// 生成摘要页面
 	v.generateSummaryPage(stats[len(stats)-1], params)
 
-	log.Printf("性能可视化报告已生成到: %s", v.resultDir)
+	log.Println(createClickableLink("\n\n性能可视化报告已生成\n", v.resultDir+"/index.html"))
 	return nil
+}
+
+func createClickableLink(text, path string) string {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+
+	fileURL := "file://" + absPath
+
+	return fmt.Sprintf("  \033]8;;%s\007%s\033]8;;\007", fileURL, text)
 }
 
 // 创建QPS图表
@@ -152,15 +163,12 @@ func (v *Visualizer) createQPSChart(stats []load.Stats, timeData []string) *char
 	// 准备QPS数据
 	qpsData := make([]opts.LineData, len(stats))
 	for i, stat := range stats {
-		qpsData[i] = opts.LineData{Value: stat.QPS}
+		qpsData[i] = opts.LineData{Value: stat.CurrentQPS}
 	}
 
 	// 添加QPS数据系列
 	line.AddSeries("QPS", qpsData).
 		SetSeriesOptions(
-			charts.WithLineChartOpts(opts.LineChart{
-				Smooth: opts.Bool(true),
-			}),
 			charts.WithMarkPointNameTypeItemOpts(
 				opts.MarkPointNameTypeItem{Name: "最大值", Type: "max"},
 				opts.MarkPointNameTypeItem{Name: "最小值", Type: "min"},
@@ -414,7 +422,7 @@ func (v *Visualizer) generateSummaryPage(finalStats load.Stats, params map[strin
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RaftKV 性能测试报告</title>
+    <title>RaftKV Benchmark</title>
     <style>
         body {
             font-family: 'Segoe UI', 'Source Han Sans CN', 'Microsoft YaHei', sans-serif;
@@ -435,13 +443,12 @@ func (v *Visualizer) generateSummaryPage(finalStats load.Stats, params map[strin
         .header {
             text-align: center;
             border-bottom: 1px solid #eaeaea;
-            padding-bottom: 20px;
             margin-bottom: 30px;
         }
         .header h1 {
             color: #2c5282;
-            font-size: 28px;
-            font-weight: 600;
+            font-size: 32px;
+			margin: 0 auto 24px;
         }
         .header p {
             color: #718096;
@@ -567,7 +574,7 @@ func (v *Visualizer) generateSummaryPage(finalStats load.Stats, params map[strin
 <body>
     <div class="container">
         <div class="header">
-            <h1>RaftKV 性能测试报告</h1>
+            <h1>RaftKV Benchmark</h1>
         </div>
         
         <h2>运行参数</h2>
@@ -589,8 +596,12 @@ func (v *Visualizer) generateSummaryPage(finalStats load.Stats, params map[strin
                 <div class="stat-label">平均延迟</div>
                 <div class="stat-value">%.2f <span style="font-size: 14px; color: #718096;">ms</span></div>
             </div>
-            <div class="stat-box primary-stat">
-                <div class="stat-label">P99 延迟</div>
+			<div class="stat-box primary-stat">
+                <div class="stat-label">P50 延迟</div>
+                <div class="stat-value">%.2f <span style="font-size: 14px; color: #718096;">ms</span></div>
+            </div>
+			<div class="stat-box primary-stat">
+                <div class="stat-label">P90 延迟</div>
                 <div class="stat-value">%.2f <span style="font-size: 14px; color: #718096;">ms</span></div>
             </div>
         </div>
@@ -611,7 +622,8 @@ func (v *Visualizer) generateSummaryPage(finalStats load.Stats, params map[strin
 		finalStats.TotalOps,
 		finalStats.QPS,
 		finalStats.AvgLatency,
-		finalStats.P99Latency,
+		finalStats.P50Latency,
+		finalStats.P90Latency,
 		time.Now().Format("2006-01-02"),
 	)
 

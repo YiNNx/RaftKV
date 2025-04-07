@@ -134,7 +134,6 @@ func (bm *BenchmarkManager) StopServers() {
 			} else {
 				_ = server.Cmd.Process.Signal(os.Interrupt)
 			}
-			log.Printf("已发送终止信号到服务器 %d\n", server.ID)
 		}
 	}
 
@@ -204,7 +203,7 @@ func (bm *BenchmarkManager) StartReporting() {
 				bm.historicalStats = append(bm.historicalStats, stats)
 				bm.reportTimes = append(bm.reportTimes, now)
 
-				bm.ReportPerformance(false)
+				bm.ReportPerformance(stats, false)
 			case <-bm.StopChan:
 				return
 			}
@@ -221,8 +220,7 @@ func (bm *BenchmarkManager) StopReporting() {
 }
 
 // 报告性能
-func (bm *BenchmarkManager) ReportPerformance(final bool) {
-	stats := bm.Results.GetStats()
+func (bm *BenchmarkManager) ReportPerformance(stats load.Stats, final bool) {
 
 	if final {
 		fmt.Println("\n======= 最终性能报告 =======")
@@ -231,7 +229,11 @@ func (bm *BenchmarkManager) ReportPerformance(final bool) {
 	}
 
 	fmt.Printf("总请求数: %d\n", stats.TotalOps)
-	fmt.Printf("每秒请求数 (QPS): %.2f\n", stats.QPS)
+	if final {
+		fmt.Printf("每秒请求数 (QPS): %.2f\n", stats.QPS)
+	} else {
+		fmt.Printf("每秒请求数 (QPS): %.2f\n", stats.CurrentQPS)
+	}
 	fmt.Printf("平均延迟: %.2f ms\n", stats.AvgLatency)
 	fmt.Printf("延迟分布:\n")
 	fmt.Printf("  P50: %.2f ms\n", stats.P50Latency)
@@ -257,8 +259,6 @@ func (bm *BenchmarkManager) GenerateVisualization(params map[string]string) {
 		return
 	}
 
-	log.Println("正在生成可视化性能报告...")
-
 	// 创建可视化器
 	visualizer := visual.NewVisualizer(*resultDir, *testName)
 
@@ -268,8 +268,6 @@ func (bm *BenchmarkManager) GenerateVisualization(params map[string]string) {
 		log.Printf("生成可视化报告失败: %v", err)
 		return
 	}
-
-	log.Println("可视化报告生成完成")
 }
 
 // 模拟网络分区
@@ -544,13 +542,9 @@ func (bm *BenchmarkManager) RunBenchmark() {
 	bm.StopClients()
 	bm.StopReporting()
 
-	// 添加最终性能数据（确保最后一个数据点被记录）
-	// finalStats := bm.Results.GetStats()
-	// bm.historicalStats = append(bm.historicalStats, finalStats)
-	// bm.reportTimes = append(bm.reportTimes, time.Now())
-
 	// 输出最终报告
-	bm.ReportPerformance(true)
+	finalStats := bm.Results.GetStats()
+	bm.ReportPerformance(finalStats, true)
 
 	// 生成可视化报告（如果需要）
 	if *visualization && len(bm.historicalStats) > 0 {
