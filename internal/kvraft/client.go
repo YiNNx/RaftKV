@@ -52,7 +52,9 @@ func (ck *Clerk) MustCall(svcMeth string, args interface{}) interface{} {
 				return res.Err
 			}
 		}
-		i++
+		if res.Err == ErrWrongLeader {
+			i++
+		}
 	}
 }
 

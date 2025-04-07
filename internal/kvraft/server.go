@@ -107,7 +107,7 @@ func (kv *KVServer) WaitTilApply(opID string, opType OpType, args interface{}) O
 	}
 	for {
 		select {
-		case <-time.After(time.Duration(100) * time.Millisecond):
+		case <-time.After(time.Duration(500) * time.Millisecond):
 			return OpRes{
 				Reply: nil,
 				Err:   ErrTimeout,
@@ -165,6 +165,7 @@ func (kv *KVServer) ListenApply() {
 					if err := e.Encode(kv.repo.data); err != nil {
 						panic(err)
 					}
+					DPrintf("SNAPSHOT!")
 					kv.rf.Snapshot(msg.CommandIndex, w.Bytes())
 				}
 				kv.duplicatedOp.Store(op.OpID, res)
@@ -303,7 +304,7 @@ func StartKVServer(rpcServer *rpc.Server, servers map[int]*rpc.ClientEnd, me int
 		notifier:     new(sync.Map),
 		duplicatedOp: new(sync.Map),
 		repo:         NewKVRepositories(),
-		maxraftstate: -1,
+		maxraftstate: 1000,
 	}
 	kv.readSnapshot(persister.ReadSnapshot())
 	_ = rpcServer.Register(kv)
