@@ -15,20 +15,19 @@ import (
 	"log"
 	"os"
 	"path"
-	"strconv"
 	"sync"
 )
 
 type Persister struct {
 	mu            sync.Mutex
-	id            int
+	id            string
 	raftStatePath string
 	snapshotPath  string
 	raftstate     []byte
 	snapshot      []byte
 }
 
-func MakePersister(id int, restart bool, raftStatePath string, snapshotPath string) *Persister {
+func MakePersister(id string, restart bool, raftStatePath string, snapshotPath string) *Persister {
 	err := os.MkdirAll(raftStatePath, 0755)
 	if err != nil {
 		log.Fatal(err)
@@ -40,8 +39,8 @@ func MakePersister(id int, restart bool, raftStatePath string, snapshotPath stri
 	ps := &Persister{
 		mu:            sync.Mutex{},
 		id:            id,
-		raftStatePath: path.Join(raftStatePath, strconv.Itoa(id)),
-		snapshotPath:  path.Join(snapshotPath, strconv.Itoa(id)),
+		raftStatePath: path.Join(raftStatePath, id),
+		snapshotPath:  path.Join(snapshotPath, id),
 	}
 	if !restart {
 		ps.Save(nil, nil)

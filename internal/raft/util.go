@@ -3,6 +3,7 @@ package raft
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 // Debugging
@@ -26,15 +27,17 @@ var colors = []string{
 	"\033[38;5;69m",
 }
 
+var color = colors[time.Now().Second()%8]
+
 // note: the debug printf will cause data race
 // but it's ok cause it's used for *debug* :)
 func (rf *Raft) Debugf(format string, a ...interface{}) {
 	if !Debug {
 		return
 	}
-	prefix := fmt.Sprintf("[%d][term %d prev %d applied %d commit %d]", rf.me, rf.currentTerm, rf.logs.PrevIndex, rf.lastApplied, rf.commitIndex)
+	prefix := fmt.Sprintf("[%s][term %d prev %d applied %d commit %d]", rf.me, rf.currentTerm, rf.logs.PrevIndex, rf.lastApplied, rf.commitIndex)
 	if Colored {
-		prefix = colors[rf.me] + prefix + "\033[39;49m"
+		prefix = color + prefix + "\033[39;49m"
 		if rf.leaderID == rf.me {
 			prefix = "\033[4m" + prefix + "\033[0m"
 		}
@@ -45,7 +48,7 @@ func (rf *Raft) Debugf(format string, a ...interface{}) {
 
 func (rf *Raft) HighLightf(format string, a ...interface{}) {
 	if Colored {
-		format = colors[rf.me] + format + "\033[39;49m"
+		format = color + format + "\033[39;49m"
 	}
 	rf.Debugf(format, a...)
 }

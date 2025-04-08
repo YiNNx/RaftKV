@@ -40,14 +40,14 @@ func (kv *KVServer) Debugf(format string, a ...interface{}) {
 	if !Debug {
 		return
 	}
-	prefix := fmt.Sprintf("[%d][kv]", kv.me)
-	prefix = colors[kv.me] + prefix + "\033[39;49m"
+	prefix := fmt.Sprintf("[%s][kv]", kv.me)
+	prefix = colors[1] + prefix + "\033[39;49m"
 	format = prefix + " " + format
 	DPrintf(format, a...)
 }
 
 func (kv *KVServer) HighLightf(format string, a ...interface{}) {
-	format = colors[kv.me] + format + "\033[39;49m"
+	format = colors[1] + format + "\033[39;49m"
 	kv.Debugf(format, a...)
 }
 

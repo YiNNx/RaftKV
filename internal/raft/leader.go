@@ -15,9 +15,9 @@ func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 
 	close(rf.appendTrigger)
 	rf.leaderID = rf.me
-	rf.appendTrigger = make(chan int, 100)
-	rf.nextIndex = make([]int, len(rf.peers))
-	rf.matchIndex = make([]int, len(rf.peers))
+	rf.appendTrigger = make(chan string, 100)
+	rf.nextIndex = make(map[string]int, len(rf.peers))
+	rf.matchIndex = make(map[string]int, len(rf.peers))
 	for i := range rf.nextIndex {
 		rf.nextIndex[i] = rf.logs.getLastIndex() + 1
 	}
@@ -27,13 +27,13 @@ func (rf *Raft) becomeLeader() (stateCtx context.Context) {
 	return stateCtx
 }
 
-const AllPeers = -1
+const AllPeers = "ALL"
 
-func (rf *Raft) getPeerIndexList(peer int) []int {
-	peers := []int{}
+func (rf *Raft) getPeerIndexList(peer string) []string {
+	peers := []string{}
 	if peer == AllPeers {
 		for peer := range rf.peers {
-			if peer == int(rf.me) {
+			if peer == rf.me {
 				continue
 			}
 			peers = append(peers, peer)
@@ -62,7 +62,7 @@ func (rf *Raft) calculateCommitIndex(lastUpdateIndex int) int {
 	return rf.commitIndex
 }
 
-func (rf *Raft) appendEntries(peer int, entriesChan chan EntriesReq, snapshotChan chan SnapshotReq) {
+func (rf *Raft) appendEntries(peer string, entriesChan chan EntriesReq, snapshotChan chan SnapshotReq) {
 	rf.stateMu.RLock()
 	currentTerm := rf.currentTerm
 	defer rf.stateMu.RUnlock()

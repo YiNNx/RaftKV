@@ -23,35 +23,35 @@ type ApplyMsg struct {
 
 type VoteReq struct {
 	args RequestVoteArgs
-	peer int
+	peer string
 }
 
 type VoteRes struct {
 	reply RequestVoteReply
-	peer  int
+	peer  string
 }
 
 type EntriesReq struct {
 	args       AppendEntriesArgs
-	peer       int
+	peer       string
 	startIndex int
 	endIndex   int
 }
 
 type EntriesRes struct {
 	reply      AppendEntriesReply
-	peer       int
+	peer       string
 	startIndex int
 	endIndex   int
 }
 
 type SnapshotReq struct {
 	args InstallSnapshotArgs
-	peer int
+	peer string
 }
 
 type SnapshotRes struct {
 	reply     InstallSnapshotReply
-	peer      int
+	peer      string
 	lastIndex int
 }

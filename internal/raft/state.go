@@ -17,17 +17,16 @@ func getHeartbeatTime() time.Duration {
 	return time.Duration(100) * time.Millisecond
 }
 
-func (rf *Raft) grantVote(candidate int) {
+func (rf *Raft) grantVote(candidate string) {
 	rf.voteFor = candidate
 	rf.persist()
 	rf.electionTicker.Reset(getRandomElectionTimeout())
 }
 
 func (rf *Raft) updateTerm(term int) {
-	rf.HighLightf("UPDATE TERM %d", term)
 	if term != rf.currentTerm {
 		rf.currentTerm = term
-		rf.voteFor = -1
+		rf.voteFor = ""
 		rf.persist()
 	}
 }
@@ -48,7 +47,7 @@ func (rf *Raft) appendLogList(entries []Entry) {
 	rf.persist()
 }
 
-func (rf *Raft) updateLeader(leaderID int) {
+func (rf *Raft) updateLeader(leaderID string) {
 	rf.leaderID = leaderID
 }
 
@@ -112,7 +111,7 @@ func (rf *Raft) readPersist(data []byte) {
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
 	var currentTerm int
-	var voteFor int
+	var voteFor string
 	var logs EntryList
 	_ = d.Decode(&currentTerm)
 	_ = d.Decode(&voteFor)

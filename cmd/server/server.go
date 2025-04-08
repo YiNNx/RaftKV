@@ -11,12 +11,12 @@ import (
 	"raftkv/pkg/rpc"
 )
 
-func StartServers(id int, peerAddrs []string, restart bool) error {
+func StartServers(id string, peerAddrs []string, restart bool) error {
 	var me string
-	peers := make(map[int]*rpc.ClientEnd, len(peerAddrs))
-	for nodeID, node := range peerAddrs {
-		peers[nodeID] = rpc.MakeClientEnd(node)
-		if nodeID == id {
+	peers := make(map[string]*rpc.ClientEnd, len(peerAddrs))
+	for _, node := range peerAddrs {
+		peers[node] = rpc.MakeClientEnd(node)
+		if node == id {
 			me = node
 		}
 	}
@@ -39,7 +39,7 @@ func StartServers(id int, peerAddrs []string, restart bool) error {
 }
 
 func main() {
-	id := flag.Int("id", -1, "specify current node id in the group")
+	id := flag.String("id", "", "specify current node id in the group")
 	nodes := flag.String("nodes", "", "node address list")
 	restart := flag.Bool("recover", false, "recover from last crash")
 	flag.Parse()

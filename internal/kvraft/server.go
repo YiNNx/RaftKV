@@ -13,7 +13,7 @@ import (
 )
 
 type KVServer struct {
-	me   int
+	me   string
 	dead int32 // set by Kill()
 
 	mu           *sync.Mutex
@@ -280,7 +280,7 @@ func (kv *KVServer) killed() bool {
 // you don't need to snapshot.
 // StartKVServer() must return quickly, so it should start goroutines
 // for any long-running work.
-func StartKVServer(rpcServer *rpc.Server, servers map[int]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me int, persister *persister.Persister) *KVServer {
+func StartKVServer(rpcServer *rpc.Server, servers map[string]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me string, persister *persister.Persister) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	gob.Register(Op{})

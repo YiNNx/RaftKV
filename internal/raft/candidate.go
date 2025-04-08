@@ -11,7 +11,7 @@ func (rf *Raft) becomeCandidate() (term int, stateCtx context.Context) {
 	defer rf.logMu.RUnlock()
 
 	rf.updateTerm(rf.currentTerm + 1)
-	rf.updateLeader(-1)
+	rf.updateLeader("")
 	rf.grantVote(rf.me)
 	rf.HighLightf("CANDIDATE")
 
@@ -35,7 +35,7 @@ func (rf *Raft) startElection() (candidateState context.Context, voteReqChan cha
 
 	voteReqChan = make(chan VoteReq, len(rf.peers)-1)
 	for peer := range rf.peers {
-		if peer == int(rf.me) {
+		if peer == rf.me {
 			continue
 		}
 		voteReqChan <- VoteReq{

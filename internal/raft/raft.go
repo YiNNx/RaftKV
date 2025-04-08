@@ -13,10 +13,10 @@ import (
 )
 
 type Raft struct {
-	peers     map[int]*rpc.ClientEnd // RPC end points of all peers
-	persister *persister.Persister   // Object to hold this peer's persisted state
-	me        int                    // this peer's index into peers[]
-	dead      int32                  // set by Kill()
+	peers     map[string]*rpc.ClientEnd // RPC end points of all peers
+	persister *persister.Persister      // Object to hold this peer's persisted state
+	me        string                    // this peer's index into peers[]
+	dead      int32                     // set by Kill()
 
 	applyChMu *sync.Mutex
 	applyCh   chan ApplyMsg
@@ -34,20 +34,20 @@ type Raft struct {
 	// update after
 	// 1. appendEntries failed, set start index - 1
 	// 2. appendEntries succeeded, set end index + 1
-	nextIndex []int
+	nextIndex map[string]int
 	// for each server, index of highest log entry known to be replicated on server
 	// (initialized to 0, increases monotonically)
 	// update after appendEntries succeed, set as end log index
-	matchIndex []int
+	matchIndex map[string]int
 
 	// node state
 	stateMu     *sync.RWMutex
-	leaderID    int
+	leaderID    string
 	currentTerm int
-	voteFor     int
+	voteFor     string
 
 	// flow control
-	appendTrigger  chan int
+	appendTrigger  chan string
 	electionTicker *time.Ticker
 	applyTicker    *time.Ticker
 	stateCancel    context.CancelFunc
@@ -61,21 +61,21 @@ type Raft struct {
 	backupMu    *sync.RWMutex          // 备用节点的互斥锁
 }
 
-func NewRaftInstance(peers map[int]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me int,
+func NewRaftInstance(peers map[string]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me string,
 	persister *persister.Persister, applyCh chan ApplyMsg) *Raft {
 
 	rf := &Raft{
 		peers:     peers,
 		persister: persister,
-		me:        int(me),
+		me:        me,
 		dead:      0,
 		applyCh:   applyCh,
 		applyChMu: &sync.Mutex{},
 
 		stateMu:     &sync.RWMutex{},
 		currentTerm: 0,
-		voteFor:     -1,
-		leaderID:    -1,
+		voteFor:     "",
+		leaderID:    "",
 
 		logs:        NewLogList(),
 		logMu:       &sync.RWMutex{},
@@ -84,7 +84,7 @@ func NewRaftInstance(peers map[int]*rpc.ClientEnd, backupPeers map[int]*rpc.Clie
 		nextIndex:   nil,
 		matchIndex:  nil,
 
-		appendTrigger:  make(chan int, 100),
+		appendTrigger:  make(chan string, 100),
 		electionTicker: time.NewTicker(getRandomElectionTimeout()),
 		applyTicker:    time.NewTicker(1 * time.Millisecond),
 
@@ -117,7 +117,7 @@ func NewRaftInstance(peers map[int]*rpc.ClientEnd, backupPeers map[int]*rpc.Clie
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me int,
+func Make(rpcServer *rpc.Server, peers map[string]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me string,
 	persister *persister.Persister, applyCh chan ApplyMsg) *Raft {
 	rf := NewRaftInstance(peers, backupPeers, me, persister, applyCh)
 	// initialize from state persisted before a crash
@@ -153,7 +153,7 @@ func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, backupPeers map[i
 	// start ticker goroutine to start elections
 	go rf.ticker()
 	go rf.apply()
-	go rf.startHealthCheck()
+	// go rf.startHealthCheck()
 
 	_ = rpcServer.Register(rf)
 	rf.HighLightf("START")

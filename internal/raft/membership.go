@@ -37,23 +37,21 @@ type RemoveServerReply struct {
 
 // 配置变更命令类型
 const (
-	CmdAddServer    = "AddServer"
-	CmdRemoveServer = "RemoveServer"
+	CmdChangeServer = "ChangeServer"
 )
 
 // 配置变更命令
 type ConfigChangeCommand struct {
-	Type       string // "AddServer" 或 "RemoveServer"
-	ServerAddr string // 服务器地址
+	Type       string
+	ServerAddr []string // 服务器地址
 }
 
-// 选举超时时间
-func GetElectionTimeout() time.Duration {
-	return 1000 * time.Millisecond // 设置为1秒
+func GetTimeout() time.Duration {
+	return 10000 * time.Millisecond
 }
 
 // 捕获新服务器的轮数
-const CatchupRounds = 3
+const CatchupRounds = 10
 
 // AddServer RPC处理函数
 func (rf *Raft) AddServer(args *AddServerArgs, reply *AddServerReply) error {
@@ -62,15 +60,7 @@ func (rf *Raft) AddServer(args *AddServerArgs, reply *AddServerReply) error {
 	// 1. 检查是否是领导者
 	if rf.me != rf.leaderID {
 		reply.Status = NOT_LEADER
-		if rf.leaderID != -1 && rf.leaderID < len(rf.peers) {
-			// 尝试提供领导者的地址
-			for id, peer := range rf.peers {
-				if id == rf.leaderID {
-					reply.LeaderHint = peer.Addr
-					break
-				}
-			}
-		}
+		reply.LeaderHint = rf.leaderID
 		rf.stateMu.RUnlock()
 		return nil
 	}
@@ -79,7 +69,7 @@ func (rf *Raft) AddServer(args *AddServerArgs, reply *AddServerReply) error {
 	// 2. 捕获新服务器的日志
 	// 创建与新服务器的连接
 	newClient := rpc.MakeClientEnd(args.NewServer)
-	success := rf.catchupNewServer(newClient, GetElectionTimeout())
+	success := rf.catchupNewServer(newClient, GetTimeout())
 	if !success {
 		reply.Status = TIMEOUT
 		return nil
@@ -92,17 +82,21 @@ func (rf *Raft) AddServer(args *AddServerArgs, reply *AddServerReply) error {
 		return nil
 	}
 
+	servers := []string{}
+	for _, peer := range rf.peers {
+		servers = append(servers, peer.Addr)
+	}
 	// 4. 添加新配置到日志
 	cmd := ConfigChangeCommand{
-		Type:       CmdAddServer,
-		ServerAddr: args.NewServer,
+		Type:       CmdChangeServer,
+		ServerAddr: append(servers, args.NewServer),
 	}
 
 	// 4. 追加新配置
 	index, _, _ := rf.Start(cmd)
 
 	// 等待提交
-	committed := rf.waitForIndexCommitted(index, GetElectionTimeout())
+	committed := rf.waitForIndexCommitted(index, GetTimeout())
 	if !committed {
 		reply.Status = TIMEOUT
 		return nil
@@ -120,25 +114,18 @@ func (rf *Raft) RemoveServer(args *RemoveServerArgs, reply *RemoveServerReply) e
 	// 1. 检查是否是领导者
 	if rf.me != rf.leaderID {
 		reply.Status = NOT_LEADER
-		if rf.leaderID != -1 && rf.leaderID < len(rf.peers) {
-			// 尝试提供领导者的地址
-			for id, peer := range rf.peers {
-				if id == rf.leaderID {
-					reply.LeaderHint = peer.Addr
-					break
-				}
-			}
-		}
+		reply.LeaderHint = rf.leaderID
 		rf.stateMu.RUnlock()
 		return nil
 	}
 
 	// 检查是否准备移除自己
-	isSelfBeingRemoved := false
+	isSelfBeingRemoved := rf.me == args.OldServer
+
+	servers := []string{}
 	for _, peer := range rf.peers {
-		if peer.Addr == args.OldServer && peer == rf.peers[rf.me] {
-			isSelfBeingRemoved = true
-			break
+		if peer.Addr != args.OldServer {
+			servers = append(servers, peer.Addr)
 		}
 	}
 	rf.stateMu.RUnlock()
@@ -148,14 +135,14 @@ func (rf *Raft) RemoveServer(args *RemoveServerArgs, reply *RemoveServerReply) e
 
 	// 3. 追加新配置到日志
 	cmd := ConfigChangeCommand{
-		Type:       CmdRemoveServer,
-		ServerAddr: args.OldServer,
+		Type:       CmdChangeServer,
+		ServerAddr: servers,
 	}
 
 	index, _, _ := rf.Start(cmd)
 
 	// 等待提交
-	committed := rf.waitForIndexCommitted(index, GetElectionTimeout())
+	committed := rf.waitForIndexCommitted(index, GetTimeout())
 	if !committed {
 		reply.Status = TIMEOUT
 		return nil
@@ -169,7 +156,7 @@ func (rf *Raft) RemoveServer(args *RemoveServerArgs, reply *RemoveServerReply) e
 		rf.HighLightf("I am removed, stepping down")
 		rf.stateMu.Lock()
 		if rf.leaderID == rf.me {
-			rf.leaderID = -1
+			rf.leaderID = ""
 		}
 		rf.stateMu.Unlock()
 	}
@@ -189,81 +176,30 @@ func (rf *Raft) applyConfigChange(entry ApplyMsg) {
 	defer rf.stateMu.Unlock()
 
 	switch cmd.Type {
-	case CmdAddServer:
-		// 解析出服务器地址
-		serverAddr := cmd.ServerAddr
-		// 创建新的 RPC 客户端连接
-		newClient := rpc.MakeClientEnd(serverAddr)
-
-		// 检查服务器是否已存在
-		exists := false
-		for _, client := range rf.peers {
-			if client.Addr == serverAddr {
-				exists = true
-				break
-			}
+	case CmdChangeServer:
+		newPeers := make(map[string]*rpc.ClientEnd)
+		for _, addr := range cmd.ServerAddr {
+			newPeers[addr] = rpc.MakeClientEnd(addr)
 		}
+		rf.peers = newPeers
+		rf.HighLightf("peers change to %+v", rf.peers)
 
-		if !exists {
-			// 添加到 peers 中，这里使用下一个可用的ID
-			nextID := 0
-			// 找到一个未使用的ID
-			for {
-				if _, exists := rf.peers[nextID]; !exists {
-					break
+		if rf.leaderID == rf.me {
+			newNextIndex := make(map[string]int)
+			newMatchIndex := make(map[string]int)
+
+			rf.logMu.Lock()
+			for _, addr := range cmd.ServerAddr {
+				if val, ok := rf.nextIndex[addr]; ok {
+					newNextIndex[addr] = val
+				} else {
+					newNextIndex[addr] = rf.logs.getLastIndex() + 1
 				}
-				nextID++
+				newMatchIndex[addr] = rf.matchIndex[addr]
 			}
-
-			rf.peers[nextID] = newClient
-
-			// 如果是领导者，更新 nextIndex 和 matchIndex
-			if rf.leaderID == rf.me {
-				rf.logMu.Lock()
-				// 确保数组长度足够
-				for len(rf.nextIndex) <= nextID {
-					rf.nextIndex = append(rf.nextIndex, 0)
-				}
-				for len(rf.matchIndex) <= nextID {
-					rf.matchIndex = append(rf.matchIndex, 0)
-				}
-
-				// 设置初始值
-				rf.nextIndex[nextID] = rf.logs.getLastIndex() + 1
-				rf.matchIndex[nextID] = 0
-				rf.logMu.Unlock()
-			}
-
-			rf.Debugf("Server added: %s with ID %d", serverAddr, nextID)
-		}
-
-	case CmdRemoveServer:
-		// 查找要移除的服务器ID
-		var serverID int = -1
-		var serverAddr = cmd.ServerAddr
-
-		for id, client := range rf.peers {
-			if client.Addr == serverAddr {
-				serverID = id
-				break
-			}
-		}
-
-		if serverID != -1 {
-			// 删除服务器
-			delete(rf.peers, serverID)
-
-			// 如果是领导者且不是自己被移除，更新 nextIndex 和 matchIndex
-			// 这里不需要实际移除数组元素，只需不再使用该索引
-
-			rf.Debugf("Server removed: ID %d, Address %s", serverID, serverAddr)
-
-			// 如果自己被移除，则退位
-			if serverID == rf.me {
-				rf.Debugf("I am removed from cluster, stepping down")
-				// 保持当前任期，但不再是领导者
-				rf.Kill()
-			}
+			rf.nextIndex = newNextIndex
+			rf.matchIndex = newMatchIndex
+			rf.logMu.Unlock()
 		}
 	}
 }
@@ -296,7 +232,7 @@ func (rf *Raft) waitForLastConfigCommitted() bool {
 	lastLogIndex := rf.logs.getLastIndex()
 	rf.logMu.RUnlock()
 
-	return rf.waitForIndexCommitted(lastLogIndex, GetElectionTimeout())
+	return rf.waitForIndexCommitted(lastLogIndex, GetTimeout())
 }
 
 // 捕获新服务器的日志
@@ -363,7 +299,6 @@ func (rf *Raft) sendSnapshotToNewServer(client *rpc.ClientEnd) (lastIndex int, s
 		// 检查任期是否改变
 		if reply.Term > currentTerm {
 			rf.stateMu.Lock()
-			rf.HighLightf("DEBUG 1")
 			rf.becomeFollower(reply.Term)
 			rf.stateMu.Unlock()
 			return 0, false

@@ -12,7 +12,7 @@ func (rf *Raft) checkReqTerm(term int) (bool, *int) {
 
 type RequestVoteArgs struct {
 	Term         int
-	CandidateID  int
+	CandidateID  string
 	LastLogIndex int
 	LastLogTerm  int
 }
@@ -24,7 +24,7 @@ type RequestVoteReply struct {
 
 func (rf Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
 	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
-		rf.Debugf("refuse vote for %d", args.CandidateID)
+		rf.Debugf("refuse vote for %s", args.CandidateID)
 		reply.Term = *curTerm
 		return nil
 	}
@@ -37,23 +37,22 @@ func (rf Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	// If RPC request or response contains term T > currentTerm:
 	// set currentTerm = T, convert to follower
 	if args.Term > rf.currentTerm {
-		rf.HighLightf("DEBUG 2 %+v", args)
 		rf.becomeFollower(args.Term)
 	}
 
 	// If votedFor is null or candidateId,
 	// and candidate's log is at least as up-to-date as receiver's log,
 	// grant vote
-	if rf.voteFor == -1 &&
+	if len(rf.voteFor) == 0 &&
 		((args.LastLogTerm == rf.logs.getLastTerm() && args.LastLogIndex >= rf.logs.getLastIndex()) ||
 			args.LastLogTerm > rf.logs.getLastTerm()) {
 		rf.grantVote(args.CandidateID)
 		reply.VoteGranted = true
 	}
 	if reply.VoteGranted {
-		rf.Debugf("vote for %d", args.CandidateID)
+		rf.Debugf("vote for %s", args.CandidateID)
 	} else {
-		rf.Debugf("refuse vote for %d", args.CandidateID)
+		rf.Debugf("refuse vote for %s", args.CandidateID)
 	}
 	reply.Term = rf.currentTerm
 	return nil
@@ -61,7 +60,7 @@ func (rf Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 
 type AppendEntriesArgs struct {
 	Term         int
-	LeaderID     int
+	LeaderID     string
 	PrevLogIndex int
 	PrevLogTerm  int
 	Entries      []Entry
@@ -86,7 +85,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	defer rf.logMu.Unlock()
 
 	if args.Term > rf.currentTerm {
-		rf.HighLightf("DEBUG 3 %+v", args)
 		rf.becomeFollower(args.Term)
 	}
 	if args.LeaderID != rf.leaderID {
@@ -127,7 +125,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 type InstallSnapshotArgs struct {
 	Term              int
-	LeaderID          int
+	LeaderID          string
 	LastIncludedIndex int
 	LastIncludedTerm  int
 	Snapshot          []byte
@@ -139,7 +137,7 @@ type InstallSnapshotReply struct {
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) error {
 	if ok, curTerm := rf.checkReqTerm(args.Term); !ok {
-		rf.Debugf("refuse to install snapshot by %d", args.LeaderID)
+		rf.Debugf("refuse to install snapshot by %s", args.LeaderID)
 		reply.Term = *curTerm
 		return nil
 	}
@@ -150,7 +148,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	defer rf.logMu.Unlock()
 
 	if args.Term > rf.currentTerm {
-		rf.HighLightf("DEBUG 4 %+v", args)
 		rf.becomeFollower(args.Term)
 	}
 	if args.LeaderID != rf.leaderID {
@@ -185,17 +182,17 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	return nil
 }
 
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+func (rf *Raft) sendRequestVote(server string, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
 }
 
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+func (rf *Raft) sendAppendEntries(server string, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
 }
 
-func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
+func (rf *Raft) sendInstallSnapshot(server string, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
 	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
 	return ok
 }
@@ -214,6 +211,6 @@ func (rf *Raft) Ping(args *PingArgs, reply *PingReply) error {
 }
 
 // 发送Ping RPC
-func (rf *Raft) sendPing(server int, args *PingArgs, reply *PingReply) bool {
+func (rf *Raft) sendPing(server string, args *PingArgs, reply *PingReply) bool {
 	return rf.peers[server].Call("Raft.Ping", args, reply)
 }

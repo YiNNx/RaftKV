@@ -98,7 +98,7 @@ type FaultStatus struct {
 	Severity  Severity
 	StartTime time.Time
 	Duration  time.Duration
-	NodeID    int
+	NodeID    string
 	// 故障原因
 	Reason string
 	// 历史记录
@@ -109,9 +109,9 @@ type FaultStatus struct {
 type FaultDetector struct {
 	mu sync.RWMutex
 	// 节点状态映射
-	nodeStatus map[int]*FaultStatus
+	nodeStatus map[string]*FaultStatus
 	// 网络指标滑动窗口
-	networkMetrics map[int]*SlidingWindow
+	networkMetrics map[string]*SlidingWindow
 	// 心跳超时时间
 	HeartbeatTimeout time.Duration
 	// 延迟阈值
@@ -133,8 +133,8 @@ func NewFaultDetector(
 	partitionDetectionTime time.Duration,
 ) *FaultDetector {
 	return &FaultDetector{
-		nodeStatus:             make(map[int]*FaultStatus),
-		networkMetrics:         make(map[int]*SlidingWindow),
+		nodeStatus:             make(map[string]*FaultStatus),
+		networkMetrics:         make(map[string]*SlidingWindow),
 		HeartbeatTimeout:       heartbeatTimeout,
 		latencyThreshold:       latencyThreshold,
 		packetLossThreshold:    packetLossThreshold,
@@ -144,7 +144,7 @@ func NewFaultDetector(
 }
 
 // 记录网络指标
-func (fd *FaultDetector) RecordNetworkMetrics(nodeID int, latency time.Duration, packetLoss float64) {
+func (fd *FaultDetector) RecordNetworkMetrics(nodeID string, latency time.Duration, packetLoss float64) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
@@ -164,7 +164,7 @@ func (fd *FaultDetector) RecordNetworkMetrics(nodeID int, latency time.Duration,
 }
 
 // 分析故障类型和严重程度
-func (fd *FaultDetector) AnalyzeFault(nodeID int) (FaultType, Severity, string) {
+func (fd *FaultDetector) AnalyzeFault(nodeID string) (FaultType, Severity, string) {
 	window, exists := fd.networkMetrics[nodeID]
 	if !exists {
 		return NoFault, Low, "no metrics available"
@@ -201,7 +201,7 @@ func (fd *FaultDetector) AnalyzeFault(nodeID int) (FaultType, Severity, string) 
 }
 
 // 更新节点状态
-func (fd *FaultDetector) UpdateNodeStatus(nodeID int) {
+func (fd *FaultDetector) UpdateNodeStatus(nodeID string) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
@@ -242,18 +242,18 @@ func (fd *FaultDetector) UpdateNodeStatus(nodeID int) {
 }
 
 // 获取节点状态
-func (fd *FaultDetector) GetNodeStatus(nodeID int) *FaultStatus {
+func (fd *FaultDetector) GetNodeStatus(nodeID string) *FaultStatus {
 	fd.mu.RLock()
 	defer fd.mu.RUnlock()
 	return fd.nodeStatus[nodeID]
 }
 
 // 获取所有故障节点
-func (fd *FaultDetector) GetFaultyNodes() []int {
+func (fd *FaultDetector) GetFaultyNodes() []string {
 	fd.mu.RLock()
 	defer fd.mu.RUnlock()
 
-	var faultyNodes []int
+	var faultyNodes []string
 	for nodeID, status := range fd.nodeStatus {
 		if status.Type != NoFault && status.Severity >= High {
 			faultyNodes = append(faultyNodes, nodeID)
@@ -262,16 +262,16 @@ func (fd *FaultDetector) GetFaultyNodes() []int {
 	return faultyNodes
 }
 
-func (fd *FaultDetector) RemoveNode(nodeID int) {
+func (fd *FaultDetector) RemoveNode(nodeID string) {
 	delete(fd.nodeStatus, nodeID)
 }
 
 // 获取需要调整的节点
-func (fd *FaultDetector) GetNodesNeedAdjustment() []int {
+func (fd *FaultDetector) GetNodesNeedAdjustment() []string {
 	fd.mu.RLock()
 	defer fd.mu.RUnlock()
 
-	var nodes []int
+	var nodes []string
 	for nodeID, status := range fd.nodeStatus {
 		if status.Type != NoFault && status.Severity >= Medium {
 			nodes = append(nodes, nodeID)
@@ -281,11 +281,11 @@ func (fd *FaultDetector) GetNodesNeedAdjustment() []int {
 }
 
 // 预测故障
-func (fd *FaultDetector) PredictFaults() map[int]FaultType {
+func (fd *FaultDetector) PredictFaults() map[string]FaultType {
 	fd.mu.RLock()
 	defer fd.mu.RUnlock()
 
-	predictions := make(map[int]FaultType)
+	predictions := make(map[string]FaultType)
 	for nodeID, window := range fd.networkMetrics {
 		if len(window.metrics) < 5 {
 			continue
