@@ -1,5 +1,10 @@
 package raft
 
+import (
+	"context"
+	"time"
+)
+
 func (rf *Raft) checkReqTerm(term int) (bool, *int) {
 	rf.stateMu.RLock()
 	defer rf.stateMu.RUnlock()
@@ -194,5 +199,54 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
 	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
+	return ok
+}
+
+// Ping RPC参数
+type PingArgs struct {
+}
+
+// Ping RPC响应
+type PingReply struct {
+}
+
+// Ping RPC处理函数
+func (rf *Raft) Ping(args *PingArgs, reply *PingReply) error {
+	return nil
+}
+
+// 发送Ping RPC
+func (rf *Raft) sendPing(server int, args *PingArgs, reply *PingReply) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	resultCh := make(chan bool, 1)
+
+	go func() {
+		ok := rf.peers[server].Call("Raft.Ping", args, reply)
+		select {
+		case resultCh <- ok:
+		case <-ctx.Done():
+		}
+	}()
+
+	// 等待结果或超时
+	select {
+	case ok := <-resultCh:
+		return ok
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// 发送AddServer RPC
+func (rf *Raft) sendAddServer(server int, args *AddServerArgs, reply *AddServerReply) bool {
+	ok := rf.peers[server].Call("Raft.AddServer", args, reply)
+	return ok
+}
+
+// 发送RemoveServer RPC
+func (rf *Raft) sendRemoveServer(server int, args *RemoveServerArgs, reply *RemoveServerReply) bool {
+	ok := rf.peers[server].Call("Raft.RemoveServer", args, reply)
 	return ok
 }

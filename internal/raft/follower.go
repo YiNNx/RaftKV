@@ -19,9 +19,7 @@ func (rf *Raft) becomeFollower(term int) (stateCtx context.Context) {
 func (rf *Raft) ticker() {
 	for !rf.killed() {
 		// Check if a leader election should be started.
-		select {
-		case <-rf.electionTicker.C:
-			rf.runCandidate()
-		}
+		<-rf.electionTicker.C
+		rf.runCandidate()
 	}
 }
