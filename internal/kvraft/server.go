@@ -107,7 +107,7 @@ func (kv *KVServer) WaitTilApply(opID string, opType OpType, args interface{}) O
 	}
 	for {
 		select {
-		case <-time.After(time.Duration(100) * time.Millisecond):
+		case <-time.After(time.Duration(500) * time.Millisecond):
 			return OpRes{
 				Reply: nil,
 				Err:   ErrTimeout,
@@ -303,7 +303,7 @@ func StartKVServer(rpcServer *rpc.Server, servers map[string]*rpc.ClientEnd, bac
 		notifier:     new(sync.Map),
 		duplicatedOp: new(sync.Map),
 		repo:         NewKVRepositories(),
-		maxraftstate: -1,
+		maxraftstate: 10000,
 	}
 	kv.readSnapshot(persister.ReadSnapshot())
 	_ = rpcServer.Register(kv)

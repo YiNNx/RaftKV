@@ -7,8 +7,8 @@ import (
 )
 
 // Debugging
-const Debug = true
-const Colored = true
+const Debug = false
+const Colored = false
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
