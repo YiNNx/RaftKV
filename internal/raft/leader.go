@@ -142,7 +142,7 @@ func (rf *Raft) runLeader() {
 
 	go rf.appendEntries(AllPeers, entriesReqChan, snapshotReqChan)
 
-	for !rf.killed(){
+	for !rf.killed() {
 		select {
 		case <-leaderState.Done():
 			return

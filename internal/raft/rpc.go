@@ -1,10 +1,5 @@
 package raft
 
-import (
-	"context"
-	"time"
-)
-
 func (rf *Raft) checkReqTerm(term int) (bool, *int) {
 	rf.stateMu.RLock()
 	defer rf.stateMu.RUnlock()
@@ -42,6 +37,7 @@ func (rf Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	// If RPC request or response contains term T > currentTerm:
 	// set currentTerm = T, convert to follower
 	if args.Term > rf.currentTerm {
+		rf.HighLightf("DEBUG 2 %+v", args)
 		rf.becomeFollower(args.Term)
 	}
 
@@ -90,6 +86,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	defer rf.logMu.Unlock()
 
 	if args.Term > rf.currentTerm {
+		rf.HighLightf("DEBUG 3 %+v", args)
 		rf.becomeFollower(args.Term)
 	}
 	if args.LeaderID != rf.leaderID {
@@ -153,6 +150,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	defer rf.logMu.Unlock()
 
 	if args.Term > rf.currentTerm {
+		rf.HighLightf("DEBUG 4 %+v", args)
 		rf.becomeFollower(args.Term)
 	}
 	if args.LeaderID != rf.leaderID {
@@ -217,36 +215,5 @@ func (rf *Raft) Ping(args *PingArgs, reply *PingReply) error {
 
 // 发送Ping RPC
 func (rf *Raft) sendPing(server int, args *PingArgs, reply *PingReply) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	resultCh := make(chan bool, 1)
-
-	go func() {
-		ok := rf.peers[server].Call("Raft.Ping", args, reply)
-		select {
-		case resultCh <- ok:
-		case <-ctx.Done():
-		}
-	}()
-
-	// 等待结果或超时
-	select {
-	case ok := <-resultCh:
-		return ok
-	case <-ctx.Done():
-		return false
-	}
-}
-
-// 发送AddServer RPC
-func (rf *Raft) sendAddServer(server int, args *AddServerArgs, reply *AddServerReply) bool {
-	ok := rf.peers[server].Call("Raft.AddServer", args, reply)
-	return ok
-}
-
-// 发送RemoveServer RPC
-func (rf *Raft) sendRemoveServer(server int, args *RemoveServerArgs, reply *RemoveServerReply) bool {
-	ok := rf.peers[server].Call("Raft.RemoveServer", args, reply)
-	return ok
+	return rf.peers[server].Call("Raft.Ping", args, reply)
 }

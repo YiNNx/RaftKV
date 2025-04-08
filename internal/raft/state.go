@@ -24,6 +24,7 @@ func (rf *Raft) grantVote(candidate int) {
 }
 
 func (rf *Raft) updateTerm(term int) {
+	rf.HighLightf("UPDATE TERM %d", term)
 	if term != rf.currentTerm {
 		rf.currentTerm = term
 		rf.voteFor = -1

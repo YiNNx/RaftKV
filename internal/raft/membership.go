@@ -363,6 +363,7 @@ func (rf *Raft) sendSnapshotToNewServer(client *rpc.ClientEnd) (lastIndex int, s
 		// 检查任期是否改变
 		if reply.Term > currentTerm {
 			rf.stateMu.Lock()
+			rf.HighLightf("DEBUG 1")
 			rf.becomeFollower(reply.Term)
 			rf.stateMu.Unlock()
 			return 0, false

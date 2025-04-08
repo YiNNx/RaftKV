@@ -42,6 +42,7 @@ func (s *Server) Register(rcvr any) error {
 }
 
 func (s *Server) Run() error {
+	log.Printf("start to run at %s", s.port)
 	rpc.HandleHTTP()
 	l, err := net.Listen("tcp", s.port)
 	if err != nil {

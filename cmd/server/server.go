@@ -20,6 +20,10 @@ func StartServers(id int, peerAddrs []string, restart bool) error {
 			me = node
 		}
 	}
+	backupPeers := make(map[int]*rpc.ClientEnd, len(peerAddrs))
+	for nodeID, node := range []string{"localhost:8083"} {
+		backupPeers[nodeID] = rpc.MakeClientEnd(node)
+	}
 	if len(me) == 0 {
 		return errors.New("invalid node id")
 	}
@@ -27,6 +31,7 @@ func StartServers(id int, peerAddrs []string, restart bool) error {
 	kvraft.StartKVServer(
 		rpcServer,
 		peers,
+		backupPeers,
 		id,
 		persister.MakePersister(id, restart, "/tmp/kvraft/state", "/tmp/kvraft/snapshot"),
 	)

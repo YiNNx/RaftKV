@@ -6,9 +6,13 @@ import "context"
 
 // turn into a follower with leader unawareness
 func (rf *Raft) becomeFollower(term int) (stateCtx context.Context) {
+	rf.HighLightf("FOLLOWER BEFORE")
+
 	rf.updateTerm(term)
 	rf.updateLeader(-1)
 
+	rf.HighLightf("FOLLOWER AFTER")
+	
 	if rf.stateCancel != nil {
 		rf.stateCancel()
 	}

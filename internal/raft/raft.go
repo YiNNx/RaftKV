@@ -61,7 +61,7 @@ type Raft struct {
 	backupMu    *sync.RWMutex          // 备用节点的互斥锁
 }
 
-func NewRaftInstance(peers map[int]*rpc.ClientEnd, me int,
+func NewRaftInstance(peers map[int]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me int,
 	persister *persister.Persister, applyCh chan ApplyMsg) *Raft {
 
 	rf := &Raft{
@@ -89,20 +89,20 @@ func NewRaftInstance(peers map[int]*rpc.ClientEnd, me int,
 		applyTicker:    time.NewTicker(1 * time.Millisecond),
 
 		// 故障感知与恢复
-		healthCheckTicker: time.NewTicker(100 * time.Millisecond),
+		healthCheckTicker: time.NewTicker(5000 * time.Millisecond),
 
 		// 备用节点
-		backupPeers: make(map[int]*rpc.ClientEnd),
+		backupPeers: backupPeers,
 		backupMu:    &sync.RWMutex{},
 	}
 
 	// 创建故障检测器
 	rf.faultDetector = fault.NewFaultDetector(
-		100*time.Millisecond, // 心跳超时
-		500*time.Millisecond, // 延迟阈值
-		0.1,                  // 丢包率阈值
-		5*time.Second,        // 滑动窗口大小
-		100*time.Millisecond, // 采样间隔
+		100*time.Millisecond,  // 心跳超时
+		500*time.Millisecond,  // 延迟阈值
+		0.1,                   // 丢包率阈值
+		3*time.Second,         // 滑动窗口大小
+		1000*time.Millisecond, // 采样间隔
 	)
 
 	return rf
@@ -117,9 +117,9 @@ func NewRaftInstance(peers map[int]*rpc.ClientEnd, me int,
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int,
+func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, backupPeers map[int]*rpc.ClientEnd, me int,
 	persister *persister.Persister, applyCh chan ApplyMsg) *Raft {
-	rf := NewRaftInstance(peers, me, persister, applyCh)
+	rf := NewRaftInstance(peers, backupPeers, me, persister, applyCh)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
@@ -162,40 +162,38 @@ func Make(rpcServer *rpc.Server, peers map[int]*rpc.ClientEnd, me int,
 
 func (rf *Raft) apply() {
 	for {
-		select {
-		case <-rf.applyTicker.C:
-			func() {
-				rf.logMu.RLock()
-				defer rf.logMu.RUnlock()
-				lastApplied := rf.getLastApplied()
-				if rf.commitIndex == lastApplied {
-					return
+		<-rf.applyTicker.C
+		func() {
+			rf.logMu.RLock()
+			defer rf.logMu.RUnlock()
+			lastApplied := rf.getLastApplied()
+			if rf.commitIndex == lastApplied {
+				return
+			}
+			msgList := make([]ApplyMsg, rf.commitIndex-lastApplied)
+			rf.HighLightf("apply entry %d - %d", lastApplied+1, rf.commitIndex)
+			for i := range msgList {
+				entry := rf.logs.getEntry(rf.getLastApplied() + i + 1)
+				msgList[i] = ApplyMsg{
+					CommandValid: true,
+					Command:      entry.Command,
+					CommandIndex: entry.Index,
 				}
-				msgList := make([]ApplyMsg, rf.commitIndex-lastApplied)
-				rf.HighLightf("apply entry %d - %d", lastApplied+1, rf.commitIndex)
-				for i := range msgList {
-					entry := rf.logs.getEntry(rf.getLastApplied() + i + 1)
-					msgList[i] = ApplyMsg{
-						CommandValid: true,
-						Command:      entry.Command,
-						CommandIndex: entry.Index,
-					}
-				}
-				rf.setLastApplied(rf.commitIndex)
+			}
+			rf.setLastApplied(rf.commitIndex)
 
-				go func() {
-					rf.applyChMu.Lock()
-					defer rf.applyChMu.Unlock()
-					for _, msg := range msgList {
-						if rf.isConfigChangeCommand(msg.Command) {
-							rf.applyConfigChange(msg)
-						} else {
-							rf.applyCh <- msg
-						}
+			go func() {
+				rf.applyChMu.Lock()
+				defer rf.applyChMu.Unlock()
+				for _, msg := range msgList {
+					if rf.isConfigChangeCommand(msg.Command) {
+						rf.applyConfigChange(msg)
+					} else {
+						rf.applyCh <- msg
 					}
-				}()
+				}
 			}()
-		}
+		}()
 	}
 }
 
@@ -260,8 +258,8 @@ func (rf *Raft) killed() bool {
 func (rf *Raft) startHealthCheck() {
 	go func() {
 		for !rf.killed() {
-			select {
-			case <-rf.healthCheckTicker.C:
+			<-rf.healthCheckTicker.C
+			if rf.leaderID == rf.me {
 				rf.checkNodeHealth()
 			}
 		}
@@ -270,8 +268,8 @@ func (rf *Raft) startHealthCheck() {
 
 // 检查节点健康状态
 func (rf *Raft) checkNodeHealth() {
-	rf.stateMu.RLock()
-	defer rf.stateMu.RUnlock()
+	// rf.stateMu.RLock()
+	// defer rf.stateMu.RUnlock()
 
 	// 检查心跳超时
 	for peerID := range rf.peers {
@@ -288,7 +286,10 @@ func (rf *Raft) checkNodeHealth() {
 		packetLoss := 0.0
 		if !ok {
 			packetLoss = 1.0
+			latency = time.Duration(5) * time.Second
 		}
+
+		// log.Printf("node %d latency %f s packetloss %f", peerID, latency.Seconds(), packetLoss)
 
 		// 记录网络指标
 		rf.faultDetector.RecordNetworkMetrics(peerID, latency, packetLoss)
@@ -304,14 +305,9 @@ func (rf *Raft) checkNodeHealth() {
 
 		// 根据故障类型和严重程度采取不同措施
 		switch status.Severity {
-		case fault.Low:
-			// 轻微故障，只记录日志
-			rf.Debugf("node %d has minor issues: %s", peerID, status.Reason)
 		case fault.Medium:
-			// 中等故障，调整读写策略
-			rf.adjustReadWriteStrategy(peerID, status)
+			rf.Debugf("node %d has warning issues: %s", peerID, status.Reason)
 		case fault.High, fault.Critical:
-			// 严重故障，需要替换节点
 			rf.Debugf("node %d has critical issues: %s", peerID, status.Reason)
 			if rf.leaderID == rf.me {
 				rf.adjustReplicas()
@@ -325,32 +321,6 @@ func (rf *Raft) checkNodeHealth() {
 		nodes := rf.faultDetector.GetNodesNeedAdjustment()
 		if len(nodes) > 0 {
 			rf.adjustReplicas()
-		}
-	}
-}
-
-// 调整读写策略
-func (rf *Raft) adjustReadWriteStrategy(peerID int, status *fault.FaultStatus) {
-	rf.stateMu.Lock()
-	defer rf.stateMu.Unlock()
-
-	// 根据故障类型调整策略
-	switch status.Type {
-	case fault.HighLatency:
-		// 对于高延迟节点，减少其参与读操作
-		// 这里可以通过调整nextIndex和matchIndex来实现
-		if rf.nextIndex[peerID] > 0 {
-			rf.nextIndex[peerID]--
-		}
-	case fault.PacketLoss:
-		// 对于丢包率高的节点，增加重试次数
-		// 这里可以通过调整心跳间隔来实现
-		rf.electionTicker.Reset(getRandomElectionTimeout() * 2)
-	case fault.TemporaryUnavailable:
-		// 对于临时不可用节点，暂时跳过
-		// 可以通过调整commitIndex来实现
-		if rf.commitIndex > rf.matchIndex[peerID] {
-			rf.commitIndex = rf.matchIndex[peerID]
 		}
 	}
 }
@@ -412,8 +382,8 @@ func (rf *Raft) adjustReplicas() {
 			NewServer: backupPeer.Addr,
 		}
 		reply := &AddServerReply{}
-		ok := rf.sendAddServer(backupNode, args, reply)
-		if !ok || reply.Status != OK {
+		err := rf.AddServer(args, reply)
+		if err != nil || reply.Status != OK {
 			rf.Debugf("failed to add backup node %d: %v", backupNode, reply.Status)
 			continue
 		}
@@ -427,20 +397,15 @@ func (rf *Raft) adjustReplicas() {
 			OldServer: rf.peers[faultyNode].Addr,
 		}
 		removeReply := &RemoveServerReply{}
-		ok = rf.sendRemoveServer(faultyNode, removeArgs, removeReply)
-		if !ok || removeReply.Status != OK {
+		err = rf.RemoveServer(removeArgs, removeReply)
+		if err != nil || removeReply.Status != OK {
 			rf.Debugf("failed to remove faulty node %d: %v", faultyNode, removeReply.Status)
 			continue
 		}
 
-		// 4. 更新节点映射
-		rf.stateMu.Lock()
-		rf.peers[backupNode] = backupPeer
-		delete(rf.peers, faultyNode)
-		rf.stateMu.Unlock()
-
 		// 5. 从备用节点列表中移除
 		rf.RemoveBackupPeer(backupNode)
+		rf.faultDetector.RemoveNode(faultyNode)
 
 		rf.HighLightf("successfully replaced faulty node %d with backup node %d", faultyNode, backupNode)
 	}

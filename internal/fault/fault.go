@@ -165,9 +165,6 @@ func (fd *FaultDetector) RecordNetworkMetrics(nodeID int, latency time.Duration,
 
 // 分析故障类型和严重程度
 func (fd *FaultDetector) AnalyzeFault(nodeID int) (FaultType, Severity, string) {
-	fd.mu.RLock()
-	defer fd.mu.RUnlock()
-
 	window, exists := fd.networkMetrics[nodeID]
 	if !exists {
 		return NoFault, Low, "no metrics available"
@@ -175,6 +172,7 @@ func (fd *FaultDetector) AnalyzeFault(nodeID int) (FaultType, Severity, string) 
 
 	// 获取平均指标
 	avgLatency := window.AverageLatency()
+	// log.Printf("node %d latency %f s", nodeID,avgLatency.Seconds())
 	avgPacketLoss := window.AveragePacketLoss()
 
 	// 分析故障类型和严重程度
@@ -262,6 +260,10 @@ func (fd *FaultDetector) GetFaultyNodes() []int {
 		}
 	}
 	return faultyNodes
+}
+
+func (fd *FaultDetector) RemoveNode(nodeID int) {
+	delete(fd.nodeStatus, nodeID)
 }
 
 // 获取需要调整的节点
