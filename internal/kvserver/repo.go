@@ -1,4 +1,4 @@
-package kvraft
+package kvserver
 
 import "sync"
 
@@ -8,7 +8,7 @@ type KVRepositery struct {
 	// Map of column family -> map of key -> value
 	data map[string]map[string]string
 	// Transaction and lock managers
-	txnManager *TransactionManager
+	txnManager  *TransactionManager
 	lockManager *LockManager
 }
 
@@ -35,7 +35,7 @@ func (repo *KVRepositery) Get(key string) string {
 func (repo *KVRepositery) GetFromCF(cf string, key string) string {
 	repo.dataMu.RLock()
 	defer repo.dataMu.RUnlock()
-	
+
 	if cfData, ok := repo.data[cf]; ok {
 		return cfData[key]
 	}
@@ -51,11 +51,11 @@ func (repo *KVRepositery) Put(key string, val string) {
 func (repo *KVRepositery) PutToCF(cf string, key string, val string) {
 	repo.dataMu.Lock()
 	defer repo.dataMu.Unlock()
-	
+
 	if _, ok := repo.data[cf]; !ok {
 		repo.data[cf] = make(map[string]string)
 	}
-	
+
 	repo.data[cf][key] = val
 }
 
@@ -63,7 +63,7 @@ func (repo *KVRepositery) PutToCF(cf string, key string, val string) {
 func (repo *KVRepositery) Append(key string, val string) {
 	repo.dataMu.Lock()
 	defer repo.dataMu.Unlock()
-	
+
 	if _, ok := repo.data[DefaultCF]; !ok {
 		repo.data[DefaultCF] = make(map[string]string)
 	}
@@ -75,7 +75,7 @@ func (repo *KVRepositery) Append(key string, val string) {
 func (repo *KVRepositery) DeleteFromCF(cf string, key string) {
 	repo.dataMu.Lock()
 	defer repo.dataMu.Unlock()
-	
+
 	if cfData, ok := repo.data[cf]; ok {
 		delete(cfData, key)
 	}
@@ -88,23 +88,23 @@ func (repo *KVRepositery) TxnGet(txnID string, key string) (string, Err) {
 	if !exists {
 		return "", ErrTxnNotFound
 	}
-	
+
 	// Check if key is in transaction's write set
 	if val, ok := txn.WriteSet[key]; ok {
 		return val, OK
 	}
-	
+
 	// Check if key is locked by another transaction
 	if locked, lockTxnID := repo.lockManager.IsLocked(key); locked && lockTxnID != txnID {
 		return "", ErrKeyLocked
 	}
-	
+
 	// Get from storage
 	val := repo.Get(key)
-	
+
 	// Add to read set
 	txn.ReadSet[key] = val
-	
+
 	return val, OK
 }
 
@@ -115,15 +115,15 @@ func (repo *KVRepositery) TxnPut(txnID string, key string, value string) Err {
 	if !exists {
 		return ErrTxnNotFound
 	}
-	
+
 	// Try to acquire lock
 	if !repo.lockManager.TryLock(key, txnID, txn.Timestamp) {
 		return ErrKeyLocked
 	}
-	
+
 	// Add to write set
 	txn.WriteSet[key] = value
-	
+
 	return OK
 }
 
@@ -134,33 +134,33 @@ func (repo *KVRepositery) TxnCommit(txnID string) Err {
 	if !exists {
 		return ErrTxnNotFound
 	}
-	
+
 	// Phase 1: Prewrite - Write locks and data
 	for key, value := range txn.WriteSet {
 		// Write to lock column family
 		lockKey := key
 		lockValue := txnID
 		repo.PutToCF(LockCF, lockKey, lockValue)
-		
+
 		// Write data with timestamp
 		writeKey := key
 		writeValue := value
 		repo.PutToCF(WriteCF, writeKey, writeValue)
 	}
-	
+
 	// Phase 2: Commit - Write commit timestamp and clean up locks
 	for key := range txn.WriteSet {
 		// Remove lock
 		repo.lockManager.Unlock(key, txnID)
 		repo.DeleteFromCF(LockCF, key)
-		
+
 		// Apply changes to default column family
 		repo.Put(key, txn.WriteSet[key])
 	}
-	
+
 	// Update transaction status
 	repo.txnManager.UpdateTransactionStatus(txnID, TxnStatusCommitted)
-	
+
 	return OK
 }
 
@@ -171,15 +171,15 @@ func (repo *KVRepositery) TxnAbort(txnID string) Err {
 	if !exists {
 		return ErrTxnNotFound
 	}
-	
+
 	// Clean up locks
 	for key := range txn.WriteSet {
 		repo.lockManager.Unlock(key, txnID)
 		repo.DeleteFromCF(LockCF, key)
 	}
-	
+
 	// Update transaction status
 	repo.txnManager.UpdateTransactionStatus(txnID, TxnStatusAborted)
-	
+
 	return OK
 }

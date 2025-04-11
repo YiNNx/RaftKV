@@ -1,4 +1,4 @@
-package kvraft
+package kvserver
 
 import (
 	"sync"
@@ -56,16 +56,16 @@ func NewTransaction() *Transaction {
 
 // TransactionManager manages all transactions in the system
 type TransactionManager struct {
-	mu          sync.Mutex
+	mu           sync.Mutex
 	transactions map[string]*Transaction
-	timestamps  map[string]uint64 // key -> timestamp
+	timestamps   map[string]uint64 // key -> timestamp
 }
 
 // NewTransactionManager creates a new transaction manager
 func NewTransactionManager() *TransactionManager {
 	return &TransactionManager{
 		transactions: make(map[string]*Transaction),
-		timestamps:  make(map[string]uint64),
+		timestamps:   make(map[string]uint64),
 	}
 }
 
@@ -73,7 +73,7 @@ func NewTransactionManager() *TransactionManager {
 func (tm *TransactionManager) CreateTransaction() string {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	txn := NewTransaction()
 	tm.transactions[txn.ID] = txn
 	return txn.ID
@@ -83,7 +83,7 @@ func (tm *TransactionManager) CreateTransaction() string {
 func (tm *TransactionManager) GetTransaction(txnID string) (*Transaction, bool) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	txn, ok := tm.transactions[txnID]
 	return txn, ok
 }
@@ -92,7 +92,7 @@ func (tm *TransactionManager) GetTransaction(txnID string) (*Transaction, bool) 
 func (tm *TransactionManager) UpdateTransactionStatus(txnID string, status string) bool {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	if txn, ok := tm.transactions[txnID]; ok {
 		txn.Status = status
 		return true
@@ -123,12 +123,12 @@ func NewLockManager() *LockManager {
 func (lm *LockManager) TryLock(key string, txnID string, timestamp uint64) bool {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
-	
+
 	if lock, exists := lm.locks[key]; exists {
 		// Key is already locked by another transaction
 		return lock.TxnID == txnID
 	}
-	
+
 	// Key is not locked, acquire the lock
 	lm.locks[key] = &Lock{
 		TxnID:     txnID,
@@ -141,7 +141,7 @@ func (lm *LockManager) TryLock(key string, txnID string, timestamp uint64) bool 
 func (lm *LockManager) Unlock(key string, txnID string) bool {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
-	
+
 	if lock, exists := lm.locks[key]; exists && lock.TxnID == txnID {
 		delete(lm.locks, key)
 		return true
@@ -153,7 +153,7 @@ func (lm *LockManager) Unlock(key string, txnID string) bool {
 func (lm *LockManager) IsLocked(key string) (bool, string) {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
-	
+
 	if lock, exists := lm.locks[key]; exists {
 		return true, lock.TxnID
 	}

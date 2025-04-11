@@ -8,12 +8,12 @@ import "context"
 func (rf *Raft) becomeFollower(term int) (stateCtx context.Context) {
 	rf.updateTerm(term)
 	rf.updateLeader("")
-	
+
 	if rf.stateCancel != nil {
 		rf.stateCancel()
 	}
 	stateCtx, rf.stateCancel = context.WithCancel(context.Background())
-	
+
 	return stateCtx
 }
 

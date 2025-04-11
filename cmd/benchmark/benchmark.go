@@ -15,7 +15,7 @@ import (
 	"raftkv/cmd/benchmark/config"
 	"raftkv/cmd/benchmark/load"
 	"raftkv/cmd/benchmark/visual"
-	"raftkv/internal/kvraft"
+	"raftkv/internal/kvserver"
 	"raftkv/pkg/rpc"
 )
 
@@ -88,7 +88,7 @@ func (bm *BenchmarkManager) StartServers() error {
 		if bm.Config.Mode == "local" {
 			// 本地模式：启动进程
 			cmd := exec.Command("go", "run", "cmd/server/server.go",
-				"-id", fmt.Sprintf("%d", node.ID),
+				"-id", node.Address,
 				"-nodes", nodeAddrsStr)
 
 			cmd.Stdout = os.Stdout
@@ -169,8 +169,8 @@ func (bm *BenchmarkManager) StartClients() {
 	bm.LoadGen = load.NewGenerator(
 		*clientCount,
 		workload,
-		func() kvraft.Clerk {
-			return *kvraft.MakeClerk(rpcEnds)
+		func() kvserver.Clerk {
+			return *kvserver.MakeClerk(rpcEnds)
 		},
 		bm.Results,
 	)

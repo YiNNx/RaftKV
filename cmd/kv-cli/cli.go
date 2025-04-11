@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"raftkv/internal/kvraft"
+	"raftkv/internal/kvserver"
 	"raftkv/pkg/rpc"
 )
 
@@ -25,7 +25,7 @@ type TxnState struct {
 }
 
 type Cli struct {
-	clerk *kvraft.Clerk
+	clerk *kvserver.Clerk
 	txn   TxnState
 }
 
@@ -35,7 +35,7 @@ func NewCli(addrList []string) *Cli {
 		rpcEnds[i] = rpc.MakeClientEnd(addr)
 	}
 	return &Cli{
-		clerk: kvraft.MakeClerk(rpcEnds),
+		clerk: kvserver.MakeClerk(rpcEnds),
 		txn: TxnState{
 			Active: false,
 		},
@@ -128,7 +128,7 @@ func (cli *Cli) Run() {
 	fmt.Println("  COMMIT                   - Commit the current transaction")
 	fmt.Println("  ABORT                    - Abort the current transaction")
 	fmt.Println("  EXIT                     - Exit the CLI")
-	
+
 	for {
 		fmt.Print("raftkv cli > ")
 		text, _ := reader.ReadString('\n')

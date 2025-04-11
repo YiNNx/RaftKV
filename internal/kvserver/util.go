@@ -1,4 +1,4 @@
-package kvraft
+package kvserver
 
 import (
 	"fmt"
@@ -54,12 +54,12 @@ func (kv *KVServer) HighLightf(format string, a ...interface{}) {
 type OpType string
 
 const (
-	OpGet              OpType = "Get"
-	OpPut              OpType = "Put"
-	OpAppend           OpType = "Append"
-	OpBeginTransaction OpType = "BeginTransaction"
-	OpTxnGet           OpType = "TxnGet"
-	OpTxnPut           OpType = "TxnPut"
+	OpGet               OpType = "Get"
+	OpPut               OpType = "Put"
+	OpAppend            OpType = "Append"
+	OpBeginTransaction  OpType = "BeginTransaction"
+	OpTxnGet            OpType = "TxnGet"
+	OpTxnPut            OpType = "TxnPut"
 	OpCommitTransaction OpType = "CommitTransaction"
 	OpAbortTransaction  OpType = "AbortTransaction"
 )

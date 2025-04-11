@@ -1,4 +1,4 @@
-package kvraft
+package kvserver
 
 import (
 	"bytes"
@@ -121,59 +121,55 @@ func (kv *KVServer) WaitTilApply(opID string, opType OpType, args interface{}) O
 func (kv *KVServer) NoOpTicker() {
 	ticker := time.NewTicker(time.Duration(50) * time.Millisecond)
 	for !kv.killed() {
-		select {
-		case <-ticker.C:
-			if curTerm, lastLogTerm, _ := kv.rf.GetState(); curTerm != lastLogTerm {
-				kv.rf.Start(nil)
-			}
+		<-ticker.C
+		if curTerm, lastLogTerm, _ := kv.rf.GetState(); curTerm != lastLogTerm {
+			kv.rf.Start(nil)
 		}
 	}
 }
 
 func (kv *KVServer) ListenApply() {
 	for !kv.killed() {
-		select {
-		case msg := <-kv.applyCh:
-			if msg.Command == nil {
-				if msg.SnapshotValid {
-					kv.readSnapshot(msg.Snapshot)
-				}
-				continue
+		msg := <-kv.applyCh
+		if msg.Command == nil {
+			if msg.SnapshotValid {
+				kv.readSnapshot(msg.Snapshot)
 			}
-			func() {
-				kv.mu.Lock()
-				defer kv.mu.Unlock()
-
-				op := msg.Command.(Op)
-
-				var notifyCh chan OpRes
-				if val, ok := kv.notifier.LoadAndDelete(op.OpID); ok {
-					notifyCh = val.(chan OpRes)
-				}
-
-				storedRes, loaded := kv.duplicatedOp.Load(op.OpID)
-				if loaded {
-					if notifyCh != nil {
-						notifyCh <- storedRes.(OpRes)
-					}
-					return
-				}
-				res := kv.Execute(op)
-				if kv.rf.GetStateSize() >= kv.maxraftstate && kv.maxraftstate != -1 {
-					w := new(bytes.Buffer)
-					e := gob.NewEncoder(w)
-					if err := e.Encode(kv.repo.data); err != nil {
-						panic(err)
-					}
-					kv.rf.Snapshot(msg.CommandIndex, w.Bytes())
-				}
-				kv.duplicatedOp.Store(op.OpID, res)
-				if _, _, isLeader := kv.rf.GetState(); notifyCh != nil && isLeader {
-					kv.HighLightf("send %d res to client", msg.CommandIndex)
-					notifyCh <- res
-				}
-			}()
+			continue
 		}
+		func() {
+			kv.mu.Lock()
+			defer kv.mu.Unlock()
+
+			op := msg.Command.(Op)
+
+			var notifyCh chan OpRes
+			if val, ok := kv.notifier.LoadAndDelete(op.OpID); ok {
+				notifyCh = val.(chan OpRes)
+			}
+
+			storedRes, loaded := kv.duplicatedOp.Load(op.OpID)
+			if loaded {
+				if notifyCh != nil {
+					notifyCh <- storedRes.(OpRes)
+				}
+				return
+			}
+			res := kv.Execute(op)
+			if kv.rf.GetStateSize() >= kv.maxraftstate && kv.maxraftstate != -1 {
+				w := new(bytes.Buffer)
+				e := gob.NewEncoder(w)
+				if err := e.Encode(kv.repo.data); err != nil {
+					panic(err)
+				}
+				kv.rf.Snapshot(msg.CommandIndex, w.Bytes())
+			}
+			kv.duplicatedOp.Store(op.OpID, res)
+			if _, _, isLeader := kv.rf.GetState(); notifyCh != nil && isLeader {
+				kv.HighLightf("send %d res to client", msg.CommandIndex)
+				notifyCh <- res
+			}
+		}()
 	}
 }
 

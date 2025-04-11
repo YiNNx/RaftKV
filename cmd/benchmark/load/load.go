@@ -3,11 +3,10 @@ package load
 import (
 	"log"
 	"math/rand"
+	"raftkv/internal/kvserver"
 	"sort"
 	"sync"
 	"time"
-
-	"raftkv/internal/kvraft"
 )
 
 // 工作负载类型
@@ -203,7 +202,7 @@ func (r *Results) GetStats() Stats {
 type Generator struct {
 	clientCount    int
 	workloadType   WorkloadType
-	clerkFactory   func() kvraft.Clerk
+	clerkFactory   func() kvserver.Clerk
 	results        *Results
 	stopChan       chan struct{}
 	wg             sync.WaitGroup
@@ -217,7 +216,7 @@ type Generator struct {
 func NewGenerator(
 	clientCount int,
 	workloadType WorkloadType,
-	clerkFactory func() kvraft.Clerk,
+	clerkFactory func() kvserver.Clerk,
 	results *Results,
 ) *Generator {
 	const keySpaceSize = 1000
